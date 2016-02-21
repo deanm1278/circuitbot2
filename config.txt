@@ -1,0 +1,21 @@
+[SETTINGS]
+OFFSET_X                = 60.0
+OFFSET_Y                = -100.0
+AXIS_SCALE_X            = 1.0
+AXIS_SCALE_Y            = 1.0
+SEGMENTS_PER_SECOND     = 50.0
+FEED_MULTIPLY           = 1.0
+LOOKAHEAD_SIZE          = 50
+
+[MACHINE]
+ADDR                    = 0x40
+I2CBUS                  = 2
+LINK_1_LENGTH           = 101.0
+LINK_2_LENGTH           = 101.0
+JOUNCE_MAX              = 200000.0
+JERK_MAX                = 20000.0
+ACCELERATION_MAX        = 1000.0
+MASS                    = 0.5
+INTERPOLATION_PERIOD    = .001
+VELOCITY_MAX            = 40.0
+IMPULSE_MAX             = 5.0
