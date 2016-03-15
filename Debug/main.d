@@ -1,14 +1,8 @@
-main.d: ../main.cpp ../main.h ../ctrlr.h ../bus/SPIDevice.h \
- ../bus/BusDevice.h ../ConfigFile.h ../Chameleon.h ../gcParser.h \
- ../motion_planner.h
+main.d: ../main.cpp ../main.h ../ConfigFile.h ../Chameleon.h \
+ ../gcParser.h ../motion_planner.h \
+ /home/debian/circuitbotDriver/test_app/libservodrv.h
 
 ../main.h:
-
-../ctrlr.h:
-
-../bus/SPIDevice.h:
-
-../bus/BusDevice.h:
 
 ../ConfigFile.h:
 
@@ -17,3 +11,5 @@ main.d: ../main.cpp ../main.h ../ctrlr.h ../bus/SPIDevice.h \
 ../gcParser.h:
 
 ../motion_planner.h:
+
+/home/debian/circuitbotDriver/test_app/libservodrv.h:

@@ -20,7 +20,7 @@ CPP_DEPS += \
 bus/%.o: ../bus/%.cpp
 	@echo 'Building file: $<'
 	@echo 'Invoking: Cross G++ Compiler'
-	arm-linux-gnueabihf-g++ -std=c++0x -I/usr/include/arm-linux-gnueabihf/c++/4.9 -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
+	arm-linux-gnueabihf-g++ -std=c++0x -I/usr/include/arm-linux-gnueabihf/c++/4.9 -I/home/debian/circuitbotDriver/test_app -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

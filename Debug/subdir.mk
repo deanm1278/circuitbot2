@@ -6,25 +6,29 @@
 CPP_SRCS += \
 ../Chameleon.cpp \
 ../ConfigFile.cpp \
-../ctrlr.cpp \
 ../gcParser.cpp \
 ../i2cfunc.cpp \
 ../main.cpp \
 ../motion_planner.cpp 
 
+C_SRCS += \
+/home/debian/circuitbotDriver/test_app/servodrv.c 
+
 OBJS += \
 ./Chameleon.o \
 ./ConfigFile.o \
-./ctrlr.o \
 ./gcParser.o \
 ./i2cfunc.o \
 ./main.o \
-./motion_planner.o 
+./motion_planner.o \
+./servodrv.o 
+
+C_DEPS += \
+./servodrv.d 
 
 CPP_DEPS += \
 ./Chameleon.d \
 ./ConfigFile.d \
-./ctrlr.d \
 ./gcParser.d \
 ./i2cfunc.d \
 ./main.d \
@@ -35,7 +39,14 @@ CPP_DEPS += \
 %.o: ../%.cpp
 	@echo 'Building file: $<'
 	@echo 'Invoking: Cross G++ Compiler'
-	arm-linux-gnueabihf-g++ -std=c++0x -I/usr/include/arm-linux-gnueabihf/c++/4.9 -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
+	arm-linux-gnueabihf-g++ -std=c++0x -I/usr/include/arm-linux-gnueabihf/c++/4.9 -I/home/debian/circuitbotDriver/test_app -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
+	@echo 'Finished building: $<'
+	@echo ' '
+
+servodrv.o: /home/debian/circuitbotDriver/test_app/servodrv.c
+	@echo 'Building file: $<'
+	@echo 'Invoking: Cross GCC Compiler'
+	arm-linux-gnueabihf-gcc -std=c11 -I/usr/include/arm-linux-gnueabihf -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

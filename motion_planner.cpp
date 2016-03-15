@@ -13,10 +13,11 @@
 #include <algorithm>
 #include <boost/math/tools/roots.hpp>
 
-#include <fstream> //REMOVE: only for logging
-
 motion_planner::motion_planner(settings_t _set) : cb(100){
     set = _set;
+    for(int i = 0; i<NUM_AXIS; i++){
+    	last_pos[i] = 0;
+    }
 }
 
 bool comp(float i, float j){
@@ -96,6 +97,7 @@ bool motion_planner::_pro_vv(float vs, float ve, std::vector<float> &ad){
     ad.push_back(t1);
     ad.push_back(t2);
     ad.push_back(t3);
+    return false;
 }
 
 float motion_planner::_pro_ad(float vs, float ve, float dm, std::vector<float> &ad){
@@ -179,7 +181,7 @@ float motion_planner::_v0(float t, std::vector<float> &ad){
     else return 0;
 }
 
-int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint32_t delta[NUM_AXIS]){
+int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint16_t delta[NUM_AXIS]){
         //DM: modified slightly for application. Original from https://github.com/vitaminrad/Marlin-for-Scara-Arm
 	// Inverse kinematics.
 	float SCARA_pos[2];
@@ -203,9 +205,9 @@ int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint32_t delta[NU
 	SCARA_theta = ( atan2(SCARA_pos[X_AXIS],SCARA_pos[Y_AXIS])-atan2(SCARA_K1, SCARA_K2) ) * -1;
 	SCARA_psi   =   atan2(SCARA_S2,SCARA_C2);
 
-	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK; // Theta is support arm angle (shoulder)
-	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK;   // - Psi sub arm angle (elbow)
-	delta[Z_AXIS] = cartesian[Z_AXIS] * TO_FIXED;
+	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK / set.T; // Theta is support arm angle (shoulder)
+	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK / set.T;   // - Psi sub arm angle (elbow)
+	delta[Z_AXIS] = cartesian[Z_AXIS] / set.T;
 
     return 0;
 }
@@ -292,12 +294,9 @@ void motion_planner::recalculate(void){
     }
 }
 
-bool motion_planner::interpolate(int max_items){
-    std::ofstream logfile;
-    logfile.open ("outfile.csv", std::ios::app);
-    
+uint32_t motion_planner::interpolate(int max_items, uint16_t *buf){
     //interpolate as much as we can based on max items
-    int num = 0;
+    uint32_t num = 0;
     while(num < max_items){
         //pop off the next step if we are at the end of the current one
         if(interp.t_current > interp.tm || (interp.t_current == 0 && interp.tm == 0)){
@@ -324,8 +323,7 @@ bool motion_planner::interpolate(int max_items){
                 interp.ve = next.speed;
             }
             else {
-                logfile.close();
-                return 0;
+                return num;
             }
         }
         else{
@@ -343,18 +341,18 @@ bool motion_planner::interpolate(int max_items){
             destination[Y_AXIS] = interp.step.point[Y_AXIS] + sin(interp.theta) * interp.dist;
 
             //calculate the position we need to get to
-            uint32_t delta[NUM_AXIS];
+            uint16_t delta[NUM_AXIS];
             calculate_delta(destination, delta);
             
-            logfile << destination[X_AXIS] << "," << destination[Y_AXIS] << "," << interp.speed << "\n";
+            //write to buffer
+            memcpy(&buf[NUM_AXIS * num], delta, sizeof(uint16_t) * NUM_AXIS);
+
             interp.t_current = interp.t_current + set.T;
             
             num++;
         }
     }
-    
-    logfile.close();
-    return 0;
+    return num;
 };
 
 bool motion_planner::plan_buffer(std::vector<float> &buf, float feedrate){

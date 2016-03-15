@@ -10,18 +10,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <iostream>
-#include <sstream>
 #include <fstream>
 #include <vector>
 #include <cmath>
 #include <iterator>
 
 #include "main.h"
-#include "ctrlr.h"
 #include "ConfigFile.h"
 #include "gcParser.h"
 #include "motion_planner.h"
 
+#include "libservodrv.h"
 
 using namespace std;
 
@@ -33,7 +32,6 @@ stop_T stop; //stores impending stop states
 vector<cmd_t> cmds; //stores gcode commands the parser gives us
 settings_t set; //stores machine settings from the config file
 
-ctrlr *ctl; //the controller object that will communicate with motion control hardware
 gcParser parse; //gcode parser
 motion_planner *planner;
 
@@ -218,11 +216,17 @@ bool processCommand(cmd_t c){
    readConfig(); //read config file
    parseInput(argc, argv);
    parse = gcParser();
-   planner = new motion_planner(set);   
+   planner = new motion_planner(set);
 
-#ifndef HEADLESS   
-   ctl = new ctrlr();
-#endif
+   //we will use the servodrv hardware api
+   int drv = servodrv_open();
+   if(drv > -1){
+	   cout << "servodrv opened successfully" << endl;
+   }
+   else{
+	   cout << "failed to open servodrv!" << endl;
+	   return 1;
+   }
    
    //do something based on the input arguments (set config values, test device available, etc.)
    
@@ -242,20 +246,23 @@ bool processCommand(cmd_t c){
          * 
          * - Gcode parser deals with gcode file and parsing
          * - Motion planner deals with velocity profile generation and interpolation of movements
-         * - Controller deals with other hardware systems (PRU, SPI)
          * 
          */
-        
-        ofstream logfile;
-        logfile.open ("outfile.csv", ios::trunc);
-        logfile << "X,Y,speed\n";
-        logfile.close();
         
          while (!(planner->empty() && eof))
          {
              if(planner->data_ready() || state == STOPPING){
-                 //for now these will be written to a file
-                planner->interpolate(500);
+            	//check how many spaces are left in the buffer
+            	int avail = servodrv_avail(drv);
+
+            	if(avail > 0){
+            		//allocate buffer for elements
+            		uint16_t to_write[avail * sizeof(uint16_t) * NUM_AXIS];
+					//ask the planner for that many elements
+					planner->interpolate(avail, to_write);
+            	}
+
+                //write to the hardware
              }
 
              //try to read in a new set of commands
@@ -290,9 +297,6 @@ bool processCommand(cmd_t c){
              //--- PROCESS STOP STATES ---//
              else if(state == STOPPING){
                  if( planner->empty() ){
-#ifndef HEADLESS
-                    if(ctl->stopped()){
-#endif
                         switch(stop){
                                 case STOP_M1:
                                     state = M1;
@@ -301,9 +305,6 @@ bool processCommand(cmd_t c){
                                     state = G4;
                                     break;
                         }
-#ifndef HEADLESS
-                    }
-#endif
 
                  }
 
@@ -317,9 +318,8 @@ bool processCommand(cmd_t c){
              }
          }
        }
+    //close the driver
+    servodrv_close(drv);
     
-#ifndef HEADLESS
-    ctl->close();
-#endif
    return 0;
 }

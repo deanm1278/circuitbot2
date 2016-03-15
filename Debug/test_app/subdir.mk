@@ -4,26 +4,27 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../BBBio_lib/BBBiolib.c \
-../BBBio_lib/BBBiolib_ADCTSC.c \
-../BBBio_lib/BBBiolib_McSPI.c \
-../BBBio_lib/BBBiolib_PWMSS.c 
+/home/debian/circuitbotDriver/test_app/servodrv.c \
+/home/debian/circuitbotDriver/test_app/servodrvtestapp.c 
 
 OBJS += \
-./BBBio_lib/BBBiolib.o \
-./BBBio_lib/BBBiolib_ADCTSC.o \
-./BBBio_lib/BBBiolib_McSPI.o \
-./BBBio_lib/BBBiolib_PWMSS.o 
+./test_app/servodrv.o \
+./test_app/servodrvtestapp.o 
 
 C_DEPS += \
-./BBBio_lib/BBBiolib.d \
-./BBBio_lib/BBBiolib_ADCTSC.d \
-./BBBio_lib/BBBiolib_McSPI.d \
-./BBBio_lib/BBBiolib_PWMSS.d 
+./test_app/servodrv.d \
+./test_app/servodrvtestapp.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
-BBBio_lib/%.o: ../BBBio_lib/%.c
+test_app/servodrv.o: /home/debian/circuitbotDriver/test_app/servodrv.c
+	@echo 'Building file: $<'
+	@echo 'Invoking: Cross GCC Compiler'
+	arm-linux-gnueabihf-gcc -std=c11 -I/usr/include/arm-linux-gnueabihf -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
+	@echo 'Finished building: $<'
+	@echo ' '
+
+test_app/servodrvtestapp.o: /home/debian/circuitbotDriver/test_app/servodrvtestapp.c
 	@echo 'Building file: $<'
 	@echo 'Invoking: Cross GCC Compiler'
 	arm-linux-gnueabihf-gcc -std=c11 -I/usr/include/arm-linux-gnueabihf -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"

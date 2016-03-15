@@ -115,7 +115,7 @@ public:
     bool full();
     bool empty();
     bool data_ready();
-    bool interpolate(int max_items);
+    uint32_t interpolate(int max_items, uint16_t *buf);
     void recalculate(void);
     int size();
     void pop();
@@ -128,8 +128,9 @@ private:
     bool _pro_vv(float vs, float ve, std::vector<float> &ad); //return the A/D profile (t1, t2, t3) in vector ad
     float _pro_ad(float vs, float ve, float dm, std::vector<float> &ad);
     float _v0(float t, std::vector<float> &ad);
-    int calculate_delta(float cartesian[NUM_AXIS], uint32_t delta[NUM_AXIS]);
+    int calculate_delta(float cartesian[NUM_AXIS], uint16_t delta[NUM_AXIS]);
     float _v_bar(float t, std::vector<float> &ad, float vs, float vm);
+    uint16_t last_pos[NUM_AXIS];
     boost::circular_buffer<step_t> cb;
 };
 
