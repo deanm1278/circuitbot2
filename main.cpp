@@ -218,7 +218,7 @@ bool processCommand(cmd_t c){
    parse = gcParser();
    planner = new motion_planner(set);
 
-   //we will use the servodrv hardware api
+   //we will use the servodrv hardware api=
    int drv = servodrv_open();
    if(drv > -1){
 	   cout << "servodrv opened successfully" << endl;
@@ -248,21 +248,23 @@ bool processCommand(cmd_t c){
          * - Motion planner deals with velocity profile generation and interpolation of movements
          * 
          */
-        
+               
          while (!(planner->empty() && eof))
          {
              if(planner->data_ready() || state == STOPPING){
             	//check how many spaces are left in the buffer
             	int avail = servodrv_avail(drv);
-
+                int num;
+                 
             	if(avail > 0){
             		//allocate buffer for elements
-            		uint16_t to_write[avail * sizeof(uint16_t) * NUM_AXIS];
-					//ask the planner for that many elements
-					planner->interpolate(avail, to_write);
+            		uint16_t to_write[avail * NUM_AXIS];
+                        //ask the planner for that many elements
+                        num = planner->interpolate(avail, to_write);
+                        for(int j=0; j<num; j += NUM_AXIS){
+                            //TODO: write to controller
+                        }
             	}
-
-                //write to the hardware
              }
 
              //try to read in a new set of commands

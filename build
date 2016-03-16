@@ -1,0 +1,3 @@
+#!/bin/bash
+
+g++ -o cbot main.cpp Chameleon.cpp ConfigFile.cpp gcParser.cpp motion_planner.cpp -lboost_regex -std=c++11

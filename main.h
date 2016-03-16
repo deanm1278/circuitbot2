@@ -17,6 +17,7 @@ extern "C" {
 #define Z_AXIS 2
 
 #define NUM_AXIS 3
+#define ENV_TEST
     
 typedef enum {READY, G1, STOPPING, G4, M1} state_T;
 typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;

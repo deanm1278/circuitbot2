@@ -15,13 +15,18 @@
 
 motion_planner::motion_planner(settings_t _set) : cb(100){
     set = _set;
-    for(int i = 0; i<NUM_AXIS; i++){
-    	last_pos[i] = 0;
-    }
+    
+    //set current starting position on the machine (NOTE: we assume the hardware has already zeroed itself out)
+    zero();
 }
 
 bool comp(float i, float j){
     return std::abs(i) < std::abs(j);
+}
+
+void motion_planner::zero(void){
+    float z[] = {0., 0., 0.};
+    calculate_delta(z, last_pos);
 }
 
 float motion_planner::force(float x[2], float y[2], float z[2], float V){
@@ -181,7 +186,7 @@ float motion_planner::_v0(float t, std::vector<float> &ad){
     else return 0;
 }
 
-int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint16_t delta[NUM_AXIS]){
+int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint32_t delta[NUM_AXIS]){
         //DM: modified slightly for application. Original from https://github.com/vitaminrad/Marlin-for-Scara-Arm
 	// Inverse kinematics.
 	float SCARA_pos[2];
@@ -205,9 +210,9 @@ int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint16_t delta[NU
 	SCARA_theta = ( atan2(SCARA_pos[X_AXIS],SCARA_pos[Y_AXIS])-atan2(SCARA_K1, SCARA_K2) ) * -1;
 	SCARA_psi   =   atan2(SCARA_S2,SCARA_C2);
 
-	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK / set.T; // Theta is support arm angle (shoulder)
-	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK / set.T;   // - Psi sub arm angle (elbow)
-	delta[Z_AXIS] = cartesian[Z_AXIS] / set.T;
+	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK; // Theta is support arm angle (shoulder)
+	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK;   // - Psi sub arm angle (elbow)
+	delta[Z_AXIS] = cartesian[Z_AXIS];
 
     return 0;
 }
@@ -260,21 +265,6 @@ void motion_planner::recalculate(void){
         iter++;
     }
     
-    //todo make sure this makes sense
-    //iterate over the list in reverse order to make sure we can stop in time for all of the segments
-    boost::circular_buffer<step_t>::reverse_iterator riter = cb.rbegin();
-    while(std::distance(riter, cb.rend()) > 1){
-        step_t step = *riter;
-        step_t next = *(riter + 1);
-        //check if speed is reachable given the length of the line
-        float dm = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2));
-        float max_reachable = this->_pro_vd(step.speed, dm);
-        //set speed to max reachable speed
-        next.speed = std::min(next.speed, max_reachable);
-        *(riter + 1) = next;
-        riter++;
-    }
-    
     //now calculate the acc/dec profile at each node
     iter = cb.begin();
     while(std::distance(iter, cb.end()) > 1){
@@ -306,51 +296,68 @@ uint32_t motion_planner::interpolate(int max_items, uint16_t *buf){
                 step_t next = cb.front();
                 
                 //reset time and distance
-                interp.t_current = 0;
+                interp.t_current = 0 + set.T;
                 interp.dist = 0;
+                //total distance of line
+                interp.L = sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2));
+                
+                interp.vs = interp.step.speed;
+                interp.ve = next.speed;
                 
                 //set the total time to complete the profile based on whether we have 3 or 7 periods
-                if(interp.step.ad_profile.size() == 3) interp.tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2);
-                else interp.tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
-                
-                //total distance of line
-                interp.dm = sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2));
+                if(interp.step.ad_profile.size() == 3){
+                    //equation 9
+                    interp.dm = (interp.vs + interp.ve) / 2 * (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2));
+                    interp.tm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2)) * interp.L / interp.dm;
+                }
+                else{
+                    interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.ve + interp.step.vm)/2;
+                    float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
+                    interp.tm = tmp_tm * interp.L / interp.dm;
+                }
                 
                 //direction
                 interp.theta = atan2(next.point[1] - interp.step.point[1], next.point[0] - interp.step.point[0]);
-
-                interp.vs = interp.step.speed;
-                interp.ve = next.speed;
+                //TODO: z-axis direction
             }
             else {
                 return num;
             }
         }
+        //get speed
+        if(interp.step.ad_profile.size() == 7) interp.speed =  _v_bar(interp.t_current * interp.dm / interp.L, interp.step.ad_profile, interp.vs, interp.step.vm);
         else{
-            //get speed
-            if(interp.step.ad_profile.size() == 7) interp.speed =  _v_bar(interp.t_current, interp.step.ad_profile, interp.vs, interp.step.vm);
-            else{
-                if(interp.vs <= interp.ve) interp.speed = interp.vs + _v0(interp.t_current, interp.step.ad_profile);
-                else interp.speed = interp.vs - _v0(interp.t_current, interp.step.ad_profile);
-            }
-
-            interp.dist = interp.dist + interp.speed * set.T;
-            
-            float destination[NUM_AXIS];
-            destination[X_AXIS] = interp.step.point[X_AXIS] + cos(interp.theta) * interp.dist;
-            destination[Y_AXIS] = interp.step.point[Y_AXIS] + sin(interp.theta) * interp.dist;
-
-            //calculate the position we need to get to
-            uint16_t delta[NUM_AXIS];
-            calculate_delta(destination, delta);
-            
-            //write to buffer
-            memcpy(&buf[NUM_AXIS * num], delta, sizeof(uint16_t) * NUM_AXIS);
-
-            interp.t_current = interp.t_current + set.T;
-            
-            num++;
+            if(interp.vs <= interp.ve) interp.speed = interp.vs + _v0(interp.t_current * interp.dm / interp.L, interp.step.ad_profile);
+            else interp.speed = interp.vs - _v0(interp.t_current * interp.dm / interp.L, interp.step.ad_profile);
         }
+      
+        interp.dist = interp.dist + interp.speed * set.T;
+
+        float destination[NUM_AXIS];
+        destination[X_AXIS] = interp.step.point[X_AXIS] + cos(interp.theta) * interp.dist;
+        destination[Y_AXIS] = interp.step.point[Y_AXIS] + sin(interp.theta) * interp.dist;
+        //TODO: z-axis destination
+
+        //calculate the position we need to get to
+        uint32_t delta[NUM_AXIS];
+        calculate_delta(destination, delta);
+
+        //calculate the speed and save to the buffer
+        uint16_t speeds[NUM_AXIS];
+        for(int i=0; i<NUM_AXIS; i++){
+            speeds[i] = std::abs((signed long long int)delta[i] - (signed long long int)last_pos[i]);
+            //TODO: flip bit 15 based on direction as is required by the hardware
+        }
+
+        //update the last position
+        memcpy(&last_pos, delta, sizeof(uint32_t) * NUM_AXIS);
+
+        //write to buffer
+        memcpy(&buf[NUM_AXIS * num], speeds, sizeof(uint16_t) * NUM_AXIS);
+        
+        interp.t_current = interp.t_current + set.T;
+
+        num++;
     }
     return num;
 };
