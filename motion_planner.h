@@ -56,6 +56,7 @@ typedef struct interpolate_t{
     float tm, theta, t_current, dm, vs, ve, speed, L;
     float destination[NUM_AXIS];
     float dist;
+    int zdir;
     step_t step;
 } interpolate_t;
 
@@ -124,7 +125,7 @@ public:
 private:
     settings_t set;
     interpolate_t interp;
-    float force(float x[2], float y[2], float z[2], float V); //return the impulse of an angle (XYZ) at a speed (V)
+    float force(float a[NUM_AXIS], float b[NUM_AXIS], float c[NUM_AXIS], float V); //return the impulse of an angle (XYZ) at a speed (V)
     float _pro_vd(float vs, float dm); //return the max speed reachable with a specified starting speed (vs) and distance (dm)
     bool _pro_vv(float vs, float ve, std::vector<float> &ad); //return the A/D profile (t1, t2, t3) in vector ad
     float _pro_ad(float vs, float ve, float dm, std::vector<float> &ad);

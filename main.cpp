@@ -20,7 +20,11 @@
 #include "gcParser.h"
 #include "motion_planner.h"
 
+#define HEADLESS
+
+#ifndef HEADLESS
 #include "libservodrv.h"
+#endif
 
 #define BUF_THRESH 799
 
@@ -222,6 +226,7 @@ bool processCommand(cmd_t c){
    parseInput(argc, argv);
    parse = gcParser();
    planner = new motion_planner(set);
+#ifndef HEADLESS
 
    //we will use the servodrv hardware api=
    int drv = servodrv_open();
@@ -232,6 +237,7 @@ bool processCommand(cmd_t c){
 	   cout << "failed to open servodrv!" << endl;
 	   return 1;
    }
+#endif
    
    //do something based on the input arguments (set config values, test device available, etc.)
    
@@ -258,7 +264,11 @@ bool processCommand(cmd_t c){
          {
              if(planner->data_ready() || state == STOPPING){
             	//check how many spaces are left in the buffer
+#ifndef HEADLESS
             	int avail = servodrv_avail(drv);
+#else
+                int avail = BUF_THRESH + 1;
+#endif
                 int num;
                  
             	if(avail > BUF_THRESH){
@@ -267,8 +277,10 @@ bool processCommand(cmd_t c){
                         //ask the planner for that many elements
                         num = planner->interpolate((uint32_t)avail, to_write);
 
+#ifndef HEADLESS
                         //write to the hardware
                         servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
+#endif
                         cout << "wrote " << num << endl;
             	}
              }
@@ -326,8 +338,10 @@ bool processCommand(cmd_t c){
              }
          }
        }
+#ifndef HEADLESS
     //close the driver
     servodrv_close(drv);
+#endif
     
    return 0;
 }

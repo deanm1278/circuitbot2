@@ -14,16 +14,16 @@
 #include <boost/math/tools/roots.hpp>
 
 /** log the speed profile to speed_profile.csv **/
-//#define LOG_PROFILE
+#define LOG_PROFILE
 
 /** log the machine path to path.csv **/
-//#define LOG_PATH
+#define LOG_PATH
 
 /** log the encoder/step values of the motors on each axis **/
-//#define LOG_AXIS
+#define LOG_AXIS
 
 /** log the speed (or step value per T) of each motor. This is the value that will be sent to the firmware **/
-//#define LOG_SPEED
+#define LOG_SPEED
 
 #if defined(LOG_PROFILE) | defined(LOG_AXIS) || defined(LOG_PATH) || defined(LOG_SPEED)
 #include <fstream>
@@ -59,7 +59,7 @@ motion_planner::motion_planner(settings_t _set) : cb(100){
 #endif
 #ifdef LOG_SPEED
         speed_logfile.open("speed.csv", std::ofstream::out | std::ofstream::trunc);
-        path_logfile << "x,y,z" << std::endl;
+        speed_logfile << "x,y,z" << std::endl;
 #endif
 
     //set current starting position on the machine (NOTE: we assume the hardware has already zeroed itself out)
@@ -75,10 +75,10 @@ void motion_planner::zero(void){
     calculate_delta(z, last_pos);
 }
 
-float motion_planner::force(float x[2], float y[2], float z[2], float V){
+float motion_planner::force(float a[NUM_AXIS], float b[NUM_AXIS], float c[NUM_AXIS], float V){
     float theta_P, theta_L;
-    theta_P = std::atan2(y[1] - x[1], y[0] - x[0]); //direction of momentum vector
-    theta_L = std::atan2(z[1] - y[1], z[0] - y[0]); //direction of resultant vector
+    theta_P = std::atan2(b[Y_AXIS] - a[Y_AXIS], b[X_AXIS] - a[X_AXIS]); //direction of momentum vector (point a to point b)
+    theta_L = std::atan2(c[Y_AXIS] - b[Y_AXIS], c[X_AXIS] - b[X_AXIS]); //direction of resultant vector (point b to point c)
     return std::sqrt(std::pow(set.M*V*std::cos(theta_L) - set.M*V*std::cos(theta_P), 2) + std::pow(set.M*V*std::sin(theta_L) - set.M*V*std::sin(theta_P), 2))/set.T;
 }
 
@@ -291,11 +291,8 @@ void motion_planner::recalculate(void){
         step_t step = *iter;
         step_t next = *(iter + 1);
         step_t next_2 = *(iter + 2);
-        float x[2] = {step.point[X_AXIS], step.point[Y_AXIS]};
-        float y[2] = {next.point[X_AXIS], next.point[Y_AXIS]};
-        float z[2] = {next_2.point[X_AXIS], next_2.point[Y_AXIS]};
         
-        float dfdv = this->force(x, y, z, 1.0);
+        float dfdv = this->force(step.point, next.point, next_2.point, 1.0);
 
         //determine limit speed at next node
         next.speed = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
@@ -346,7 +343,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                 interp.t_current = 0 + set.T;
                 interp.dist = 0;
                 //total distance of line
-                interp.L = sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2));
+                interp.L = sqrt(pow(sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2)), 2) + pow(next.point[Z_AXIS] - interp.step.point[Z_AXIS],2));
                 
                 interp.vs = interp.step.speed;
                 interp.ve = next.speed;
@@ -364,8 +361,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                 }
                 
                 //direction
-                interp.theta = atan2(next.point[1] - interp.step.point[1], next.point[0] - interp.step.point[0]);
-                //TODO: z-axis direction
+                interp.theta = atan2(next.point[Y_AXIS] - interp.step.point[Y_AXIS], next.point[X_AXIS] - interp.step.point[X_AXIS]);
             }
             else {
                 return num;
@@ -385,10 +381,10 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
         interp.dist = interp.dist + interp.speed * set.T;
 
         float destination[NUM_AXIS];
+        //split out x y and z components of speed
         destination[X_AXIS] = interp.step.point[X_AXIS] + cos(interp.theta) * interp.dist;
         destination[Y_AXIS] = interp.step.point[Y_AXIS] + sin(interp.theta) * interp.dist;
         destination[Z_AXIS] = 0;
-        //TODO: z-axis destination
 
 #ifdef LOG_PATH
         path_logfile << destination[X_AXIS] << "," << destination[Y_AXIS] << "," << destination[Z_AXIS] << std::endl;
