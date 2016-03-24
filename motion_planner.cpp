@@ -258,7 +258,7 @@ int motion_planner::calculate_delta(float cartesian[NUM_AXIS], long int delta[NU
 
 	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK; // Theta is support arm angle (shoulder)
 	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK;   // - Psi sub arm angle (elbow)
-	delta[Z_AXIS] = cartesian[Z_AXIS];
+	delta[Z_AXIS] = cartesian[Z_AXIS]; //TODO: convert to steps
 
     return 0;
 }
@@ -299,7 +299,7 @@ void motion_planner::recalculate(void){
         
         if(std::distance(iter, cb.end()) > 1){
             //check if speed is reachable given the length of the line
-            float dm = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2));
+            float dm = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
             float max_reachable = this->_pro_vd(step.speed, dm);
             next.speed = std::min(next.speed, max_reachable);
         }
@@ -313,7 +313,7 @@ void motion_planner::recalculate(void){
     while(std::distance(iter, cb.end()) > 1){
         step_t step = *iter;
         step_t next = *(iter + 1);
-        float L = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2));
+        float L = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
 
         if(this->_pro_vd(step.speed, L) < set.Vm){
             _pro_vv(step.speed, next.speed, step.ad_profile);
@@ -343,7 +343,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                 interp.t_current = 0 + set.T;
                 interp.dist = 0;
                 //total distance of line
-                interp.L = sqrt(pow(sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2)), 2) + pow(next.point[Z_AXIS] - interp.step.point[Z_AXIS],2));
+                interp.L = sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2) + pow(next.point[Z_AXIS] - interp.step.point[Z_AXIS],2));
                 
                 interp.vs = interp.step.speed;
                 interp.ve = next.speed;
@@ -360,8 +360,10 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                     interp.tm = tmp_tm * interp.L / interp.dm;
                 }
                 
-                //direction
-                interp.theta = atan2(next.point[Y_AXIS] - interp.step.point[Y_AXIS], next.point[X_AXIS] - interp.step.point[X_AXIS]);
+                //get all direction cosines
+                for(int i=0; i<NUM_AXIS; i++){
+                	interp.cosines[i] = (next.point[i] - interp.step.point[i]) / interp.L;
+                }
             }
             else {
                 return num;
@@ -382,9 +384,9 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
 
         float destination[NUM_AXIS];
         //split out x y and z components of speed
-        destination[X_AXIS] = interp.step.point[X_AXIS] + cos(interp.theta) * interp.dist;
-        destination[Y_AXIS] = interp.step.point[Y_AXIS] + sin(interp.theta) * interp.dist;
-        destination[Z_AXIS] = 0;
+        for(int i=0; i<NUM_AXIS; i++){
+			destination[i] = interp.step.point[i] + interp.cosines[i] * interp.dist;
+		}
 
 #ifdef LOG_PATH
         path_logfile << destination[X_AXIS] << "," << destination[Y_AXIS] << "," << destination[Z_AXIS] << std::endl;

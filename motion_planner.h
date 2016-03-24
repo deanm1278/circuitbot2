@@ -53,10 +53,10 @@ typedef struct settings_t{
 } settings_t;
 
 typedef struct interpolate_t{
-    float tm, theta, t_current, dm, vs, ve, speed, L;
+    float tm, t_current, dm, vs, ve, speed, L;
     float destination[NUM_AXIS];
     float dist;
-    int zdir;
+    float cosines[NUM_AXIS];
     step_t step;
 } interpolate_t;
 
