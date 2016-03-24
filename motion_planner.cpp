@@ -13,9 +13,55 @@
 #include <algorithm>
 #include <boost/math/tools/roots.hpp>
 
+/** log the speed profile to speed_profile.csv **/
+//#define LOG_PROFILE
+
+/** log the machine path to path.csv **/
+//#define LOG_PATH
+
+/** log the encoder/step values of the motors on each axis **/
+//#define LOG_AXIS
+
+/** log the speed (or step value per T) of each motor. This is the value that will be sent to the firmware **/
+//#define LOG_SPEED
+
+#if defined(LOG_PROFILE) | defined(LOG_AXIS) || defined(LOG_PATH) || defined(LOG_SPEED)
+#include <fstream>
+#endif
+
+#ifdef LOG_PROFILE
+std::ofstream logfile;
+#endif
+#ifdef LOG_AXIS
+std::ofstream axis_logfile;
+#endif
+#ifdef LOG_PATH
+std::ofstream path_logfile;
+#endif
+#ifdef LOG_SPEED
+std::ofstream speed_logfile;
+#endif
+
 motion_planner::motion_planner(settings_t _set) : cb(100){
     set = _set;
     
+#ifdef LOG_PROFILE
+        logfile.open("speed_profile.csv", std::ofstream::out | std::ofstream::trunc);         //Opening file to print info to
+        logfile << "speed" << std::endl;
+#endif
+#ifdef LOG_AXIS
+        axis_logfile.open("axis.csv", std::ofstream::out | std::ofstream::trunc);         //Opening file to print info to
+        axis_logfile << "x,y,z" << std::endl;
+#endif
+#ifdef LOG_PATH
+        path_logfile.open("path.csv", std::ofstream::out | std::ofstream::trunc);
+        path_logfile << "x,y,z" << std::endl;
+#endif
+#ifdef LOG_SPEED
+        speed_logfile.open("speed.csv", std::ofstream::out | std::ofstream::trunc);
+        path_logfile << "x,y,z" << std::endl;
+#endif
+
     //set current starting position on the machine (NOTE: we assume the hardware has already zeroed itself out)
     zero();
 }
@@ -186,7 +232,7 @@ float motion_planner::_v0(float t, std::vector<float> &ad){
     else return 0;
 }
 
-int motion_planner::calculate_delta(float cartesian[NUM_AXIS], uint32_t delta[NUM_AXIS]){
+int motion_planner::calculate_delta(float cartesian[NUM_AXIS], long int delta[NUM_AXIS]){
         //DM: modified slightly for application. Original from https://github.com/vitaminrad/Marlin-for-Scara-Arm
 	// Inverse kinematics.
 	float SCARA_pos[2];
@@ -284,9 +330,10 @@ void motion_planner::recalculate(void){
     }
 }
 
-uint32_t motion_planner::interpolate(int max_items, uint16_t *buf){
+uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
     //interpolate as much as we can based on max items
     uint32_t num = 0;
+
     while(num < max_items){
         //pop off the next step if we are at the end of the current one
         if(interp.t_current > interp.tm || (interp.t_current == 0 && interp.tm == 0)){
@@ -330,24 +377,43 @@ uint32_t motion_planner::interpolate(int max_items, uint16_t *buf){
             if(interp.vs <= interp.ve) interp.speed = interp.vs + _v0(interp.t_current * interp.dm / interp.L, interp.step.ad_profile);
             else interp.speed = interp.vs - _v0(interp.t_current * interp.dm / interp.L, interp.step.ad_profile);
         }
+
+#ifdef LOG_PROFILE
+    logfile << interp.speed << std::endl;
+#endif
       
         interp.dist = interp.dist + interp.speed * set.T;
 
         float destination[NUM_AXIS];
         destination[X_AXIS] = interp.step.point[X_AXIS] + cos(interp.theta) * interp.dist;
         destination[Y_AXIS] = interp.step.point[Y_AXIS] + sin(interp.theta) * interp.dist;
+        destination[Z_AXIS] = 0;
         //TODO: z-axis destination
 
+#ifdef LOG_PATH
+        path_logfile << destination[X_AXIS] << "," << destination[Y_AXIS] << "," << destination[Z_AXIS] << std::endl;
+#endif
+
         //calculate the position we need to get to
-        uint32_t delta[NUM_AXIS];
+        long int delta[NUM_AXIS];
         calculate_delta(destination, delta);
+
+#ifdef LOG_AXIS
+         axis_logfile << delta[X_AXIS] << "," << delta[Y_AXIS] << "," << delta[Z_AXIS] << std::endl;
+#endif
 
         //calculate the speed and save to the buffer
         uint16_t speeds[NUM_AXIS];
         for(int i=0; i<NUM_AXIS; i++){
-            speeds[i] = std::abs((signed long long int)delta[i] - (signed long long int)last_pos[i]);
-            //TODO: flip bit 15 based on direction as is required by the hardware
+            speeds[i] = std::abs(delta[i] - last_pos[i]);
+
+            //flip bit 15 to indicate direction. This is what the hardware is expecting
+            if(delta[i] > last_pos[i]) speeds[i] |= 0x8000;
         }
+
+#ifdef LOG_SPEED
+        speed_logfile << (speeds[X_AXIS] & 0x7FFF) << "," << (speeds[Y_AXIS] & 0x7FFF) << "," << (speeds[Z_AXIS] & 0x7FFF) << std::endl;
+#endif
 
         //update the last position
         memcpy(&last_pos, delta, sizeof(uint32_t) * NUM_AXIS);
@@ -397,5 +463,11 @@ void motion_planner::pop(void){
 }
 
 motion_planner::~motion_planner() {
+#ifdef LOG_PROFILE
+        logfile.close();
+#endif
+#ifdef LOG_AXIS
+        axis_logfile.close();
+#endif
 }
 

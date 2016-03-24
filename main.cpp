@@ -22,6 +22,11 @@
 
 #include "libservodrv.h"
 
+#define BUF_THRESH 799
+
+typedef enum {READY, G1, STOPPING, G4, M1} state_T;
+typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;
+
 using namespace std;
 
 string sourceFile; //the gcode source file
@@ -256,14 +261,15 @@ bool processCommand(cmd_t c){
             	int avail = servodrv_avail(drv);
                 int num;
                  
-            	if(avail > 0){
+            	if(avail > BUF_THRESH){
             		//allocate buffer for elements
             		uint16_t to_write[avail * NUM_AXIS];
                         //ask the planner for that many elements
-                        num = planner->interpolate(avail, to_write);
-                        for(int j=0; j<num; j += NUM_AXIS){
-                            //TODO: write to controller
-                        }
+                        num = planner->interpolate((uint32_t)avail, to_write);
+
+                        //write to the hardware
+                        servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
+                        cout << "wrote " << num << endl;
             	}
              }
 
