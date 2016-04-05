@@ -44,7 +44,7 @@ settings_t set; //stores machine settings from the config file
 
 gcParser parse; //gcode parser
 motion_planner *planner;
-
+VC0706 *camera; //camera for calibration
 
 float current_position[NUM_AXIS];
 float destination[NUM_AXIS];
@@ -224,18 +224,17 @@ bool processCommand(cmd_t c){
 
  int main (int argc, char **argv)
  {
-	 try {
+    try {
+       camera = new VC0706("/dev/ttyO4", 38400);
 
-		 VC0706 cam("/dev/ttyO4",115200);
-
-	 } catch(boost::system::system_error& e)
-	 {
-		 cout<<"Error: "<<e.what()<<endl;
-		 return 1;
-	 }
-	 return 0;
-
-
+    } catch(boost::system::system_error& e)
+    {
+       cout<<"Error: "<<e.what()<<endl;
+       return 1;
+    }
+    return 0;
+         
+         
    readConfig(); //read config file
    parseInput(argc, argv);
    parse = gcParser();
