@@ -19,6 +19,7 @@
 #include "ConfigFile.h"
 #include "gcParser.h"
 #include "motion_planner.h"
+#include "VC0706.h"
 
 #define HEADLESS
 
@@ -43,6 +44,7 @@ settings_t set; //stores machine settings from the config file
 
 gcParser parse; //gcode parser
 motion_planner *planner;
+
 
 float current_position[NUM_AXIS];
 float destination[NUM_AXIS];
@@ -222,6 +224,18 @@ bool processCommand(cmd_t c){
 
  int main (int argc, char **argv)
  {
+	 try {
+
+		 VC0706 cam("/dev/ttyO4",115200);
+
+	 } catch(boost::system::system_error& e)
+	 {
+		 cout<<"Error: "<<e.what()<<endl;
+		 return 1;
+	 }
+	 return 0;
+
+
    readConfig(); //read config file
    parseInput(argc, argv);
    parse = gcParser();

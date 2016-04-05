@@ -258,7 +258,7 @@ int motion_planner::calculate_delta(float cartesian[NUM_AXIS], long int delta[NU
 
 	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK; // Theta is support arm angle (shoulder)
 	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK;   // - Psi sub arm angle (elbow)
-	delta[Z_AXIS] = cartesian[Z_AXIS]; //TODO: convert to steps
+	delta[Z_AXIS] = cartesian[Z_AXIS] * STEPS_PER_MM; //convert to steps
 
     return 0;
 }
