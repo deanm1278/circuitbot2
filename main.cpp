@@ -225,15 +225,15 @@ bool processCommand(cmd_t c){
  int main (int argc, char **argv)
  {
     try {
-       camera = new VC0706("/dev/ttyO4", 38400);
+    	//open the camera hardware
+       camera = new VC0706("/dev/ttyO4");
+       cout << "camera successfully opened. " << camera->getVersion() << endl;
 
     } catch(boost::system::system_error& e)
     {
        cout<<"Error: "<<e.what()<<endl;
        return 1;
     }
-    return 0;
-         
          
    readConfig(); //read config file
    parseInput(argc, argv);

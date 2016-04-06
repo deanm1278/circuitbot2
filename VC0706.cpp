@@ -11,15 +11,28 @@
 #include <boost/asio.hpp>
 #include "VC0706.h"
 
+
+#define DEBUG
+
 VC0706::VC0706(std::string port, unsigned int baud_rate)
 : io(), serial(io,port){
+
+#ifdef DEBUG
+	std::cout << "opening camera..." << std::endl;
+#endif
+
 	serial.set_option(boost::asio::serial_port_base::baud_rate(baud_rate));
 	frameptr  = 0;
 	bufferLen = 0;
 	serialNum = 0;
+	reset();
 }
 
 bool VC0706::reset() {
+#ifdef DEBUG
+	std::cout << "resetting..." << std::endl;
+#endif
+
   uint8_t args[] = {0x0};
 
   return runCommand(VC0706_RESET, args, 1, 5);
@@ -57,7 +70,7 @@ bool VC0706::setMotionDetect(bool flag) {
 
   uint8_t args[] = {0x01, flag};
   
-  runCommand(VC0706_COMM_MOTION_CTRL, args, sizeof(args), 5);
+  return runCommand(VC0706_COMM_MOTION_CTRL, args, sizeof(args), 5);
 }
 
 
@@ -104,11 +117,16 @@ bool VC0706::setDownsize(uint8_t newsize) {
 /***************** other high level commands */
 
 char * VC0706::getVersion() {
+
+#ifdef DEBUG
+	std::cout << "getting camera version..." << std::endl;
+#endif
+
   uint8_t args[] = {0x01};
   
   sendCommand(VC0706_GEN_VERSION, args, 1);
   // get reply
-  if (!readResponse(CAMERABUFFSIZ, 200)) 
+  if (!readResponse(CAMERABUFFSIZ, 200))
     return 0;
   camerabuff[bufferLen] = 0;  // end it!
   return (char *)camerabuff;  // return it!
@@ -326,6 +344,11 @@ uint8_t * VC0706::readPicture(uint8_t n) {
 
 bool VC0706::runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
 		   uint8_t resplen, bool flushflag) {
+
+#ifdef DEBUG
+	std::cout << "running command..." << std::endl;
+#endif
+
 	// flush out anything in the buffer?
 	  if (flushflag) {
 		readResponse(100, 10);
@@ -345,16 +368,24 @@ bool VC0706::runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
 }
 
 void VC0706::sendCommand(uint8_t cmd, uint8_t args[] = 0, uint8_t argn = 0) {
-	uint8_t c = VC0706_RECEIVE_SIGN;
-	boost::asio::write(serial, boost::asio::buffer(&c, sizeof(uint8_t)));
-	boost::asio::write(serial, boost::asio::buffer(&serialNum, sizeof(uint8_t)));
-	boost::asio::write(serial, boost::asio::buffer(&cmd, sizeof(uint8_t)));
+#ifdef DEBUG
+	std::cout << "sending command..." << std::endl;
+#endif
+	char toWrite[3 + argn];
+	toWrite[0] = VC0706_RECEIVE_SIGN;
+	toWrite[1] = serialNum;
+	toWrite[2] = cmd;
+	memcpy(args, &toWrite[3], argn * sizeof(uint8_t));
 
-	boost::asio::write(serial, boost::asio::buffer(args, sizeof(uint8_t) * argn));
+	boost::asio::write(serial, boost::asio::buffer(toWrite, sizeof(uint8_t) * (3 + argn)));
 }
 
 uint8_t VC0706::readResponse(uint8_t numbytes, uint8_t timeout) {
-    //todo timeout, use async read
+    //TODO: this needs to be able to read until serial data isn't available. Use async read and a timeout
+#ifdef DEBUG
+	std::cout << "reading response..." << std::endl;
+#endif
+
     bufferLen = boost::asio::read(serial, boost::asio::buffer(camerabuff, numbytes));
     return bufferLen;
 }

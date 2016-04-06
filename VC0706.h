@@ -57,41 +57,41 @@
 
 class VC0706 {
 public:
-	VC0706(std::string port, unsigned int baud_rate);
-        bool reset();
-        bool TVon();
-        bool TVoff();
-        bool takePicture();
-        uint8_t *readPicture(uint8_t n);
-        bool resumeVideo();
-        uint32_t frameLength();
-        char *getVersion();
-        uint8_t available();
-        uint8_t getDownsize();
-        bool setDownsize(uint8_t);
-        uint8_t getImageSize();
-        bool setImageSize(uint8_t);
-        bool getMotionDetect();
-        uint8_t getMotionStatus(uint8_t);
-        bool motionDetected();
-        bool setMotionDetect(bool f);
-        bool setMotionStatus(uint8_t x, uint8_t d1, uint8_t d2);
-        bool cameraFrameBuffCtrl(uint8_t command);
-        uint8_t getCompression();
-        bool setCompression(uint8_t c);
+	VC0706(std::string port, unsigned int baud_rate = 38400);
+	bool reset();
+	bool TVon();
+	bool TVoff();
+	bool takePicture();
+	uint8_t *readPicture(uint8_t n);
+	bool resumeVideo();
+	uint32_t frameLength();
+	char *getVersion();
+	uint8_t available();
+	uint8_t getDownsize();
+	bool setDownsize(uint8_t);
+	uint8_t getImageSize();
+	bool setImageSize(uint8_t);
+	bool getMotionDetect();
+	uint8_t getMotionStatus(uint8_t);
+	bool motionDetected();
+	bool setMotionDetect(bool f);
+	bool setMotionStatus(uint8_t x, uint8_t d1, uint8_t d2);
+	bool cameraFrameBuffCtrl(uint8_t command);
+	uint8_t getCompression();
+	bool setCompression(uint8_t c);
 
-        bool getPTZ(uint16_t &w, uint16_t &h, uint16_t &wz, uint16_t &hz, uint16_t &pan, uint16_t &tilt);
-        bool setPTZ(uint16_t wz, uint16_t hz, uint16_t pan, uint16_t tilt);
+	bool getPTZ(uint16_t &w, uint16_t &h, uint16_t &wz, uint16_t &hz, uint16_t &pan, uint16_t &tilt);
+	bool setPTZ(uint16_t wz, uint16_t hz, uint16_t pan, uint16_t tilt);
 
-        void OSD(uint8_t x, uint8_t y, char *s); // isnt supported by the chip :(
+	void OSD(uint8_t x, uint8_t y, char *s); // isnt supported by the chip :(
 
-        char* setBaud9600();
-        char* setBaud19200();
-        char* setBaud38400();
-        char* setBaud57600();
-        char* setBaud115200();
-        
-        void printBuff();
+	char* setBaud9600();
+	char* setBaud19200();
+	char* setBaud38400();
+	char* setBaud57600();
+	char* setBaud115200();
+
+	void printBuff();
 	virtual ~VC0706();
 private:
     boost::asio::io_service io;
