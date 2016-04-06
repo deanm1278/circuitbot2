@@ -9,6 +9,7 @@
  */
 
 #include <boost/asio.hpp>
+#include <boost/optional.hpp>
 #include "VC0706.h"
 
 
@@ -385,8 +386,32 @@ uint8_t VC0706::readResponse(uint8_t numbytes, uint8_t timeout) {
 #ifdef DEBUG
 	std::cout << "reading response..." << std::endl;
 #endif
+    //reset buffer length
+    bufferLen = 0;
+    
+    //set the timer
+    boost::optional<boost::system::error_code> timer_result;
+    boost::asio::deadline_timer timer(serial.get_io_service());
+    timer.expires_from_now(boost::posix_time::milliseconds(timeout));
+    timer.async_wait([&timer_result] (const boost::system::error_code& error) { timer_result.reset(error); });
+    
+    //read bytes into the camera buffer, set buffer length
+    boost::optional<boost::system::error_code> read_result;
+    boost::asio::async_read(serial, boost::asio::buffer(camerabuff, numbytes), [&read_result, this] (const boost::system::error_code& error, size_t transferred) { read_result.reset(error); bufferLen = transferred; });
 
-    bufferLen = boost::asio::read(serial, boost::asio::buffer(camerabuff, numbytes));
+    //read till timeout or read limit reached
+    serial.get_io_service().reset();
+    while (serial.get_io_service().run_one())
+    { 
+        if (read_result)
+            timer.cancel();
+        else if (timer_result){
+#ifdef DEBUG
+            std::cout << "timed out... " << bufferLen << " items in buffer" << std::endl;
+#endif
+            serial.cancel();
+        }
+    }
     return bufferLen;
 }
 

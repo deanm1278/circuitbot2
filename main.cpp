@@ -20,6 +20,7 @@
 #include "gcParser.h"
 #include "motion_planner.h"
 #include "VC0706.h"
+#include "calibrate.h"
 
 #define HEADLESS
 
@@ -31,6 +32,7 @@
 
 typedef enum {READY, G1, STOPPING, G4, M1} state_T;
 typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;
+typedef enum {UNSET, JOG, CALIBRATE, RUN} cbot_run_mode;
 
 using namespace std;
 
@@ -39,12 +41,19 @@ string sourceFile; //the gcode source file
 state_T state; //the current state of the machine
 stop_T stop; //stores impending stop states
 
+cbot_run_mode mode; //machine mode
+
 vector<cmd_t> cmds; //stores gcode commands the parser gives us
 settings_t set; //stores machine settings from the config file
 
 gcParser parse; //gcode parser
+
 motion_planner *planner;
+
 VC0706 *camera; //camera for calibration
+string camera_port;
+
+calibrate *calibrate; //image processing class for claibration
 
 float current_position[NUM_AXIS];
 float destination[NUM_AXIS];
@@ -70,26 +79,44 @@ void readConfig(void){ //use as template for our config file
   set.T                             = (float)cf.Value("MACHINE", "INTERPOLATION_PERIOD");
   set.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
   set.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
+  
+  camera_port                       = (string)cf.Value("MACHINE", "CAMERA_PORT");
 }
 
 int parseInput(int argc, char**argv){
     //get options
-   int bflag = 0;
-   int sflag = 0;
    int ix;
    int c;
 
    opterr = 0;
 
-   while ((c = getopt (argc, argv, "bs")) != -1)
+   while ((c = getopt (argc, argv, "jcr")) != -1)
      switch (c)
        {
-       case 'b':
-         bflag = 1;
+       case 'j': //jog mode
+           if(!mode)
+                mode = JOG;
+           else{
+               fprintf(stderr, "invalid arguments specified\n");
+               return 1;
+           }
          break;
-       case 's':
-         sflag = 1;
+       case 'c': //calibrate mode
+           if(!mode)
+                mode = CALIBRATE;
+           else{
+               fprintf(stderr, "invalid arguments specified\n");
+               return 1;
+           }
          break;
+       case 'r': //run mode
+           if(!mode)
+                mode = RUN;
+           else{
+               fprintf(stderr, "invalid arguments specified\n");
+               return 1;
+           }
+        break;
        case '?':
          if (isprint (optopt))
            fprintf (stderr, "Unknown option `-%c'.\n", optopt);
@@ -101,8 +128,6 @@ int parseInput(int argc, char**argv){
        default:
          abort ();
        }
-
-   //printf ("bflag = %d, sflag = %d\n", bflag, sflag);
    
    ix = optind;
    if(argv[ix] != NULL){ //argv ends with null
@@ -223,25 +248,17 @@ bool processCommand(cmd_t c){
 }
 
  int main (int argc, char **argv)
- {
-    try {
-    	//open the camera hardware
-       camera = new VC0706("/dev/ttyO4");
-       cout << "camera successfully opened. " << camera->getVersion() << endl;
-
-    } catch(boost::system::system_error& e)
-    {
-       cout<<"Error: "<<e.what()<<endl;
-       return 1;
-    }
-         
+ {       
    readConfig(); //read config file
-   parseInput(argc, argv);
+   
+   if(parseInput(argc, argv))
+       return 1;
+   
    parse = gcParser();
    planner = new motion_planner(set);
+   
 #ifndef HEADLESS
-
-   //we will use the servodrv hardware api=
+   //we will use the servodrv hardware api
    int drv = servodrv_open();
    if(drv > -1){
 	   cout << "servodrv opened successfully" << endl;
@@ -252,105 +269,128 @@ bool processCommand(cmd_t c){
    }
 #endif
    
-   //do something based on the input arguments (set config values, test device available, etc.)
-   
-   
-    if(sourceFile != ""){
-        //open the source file and begin reading lines
-        ifstream infile(sourceFile.c_str());
+   switch(mode){  
+   /* Auto-home the machine using the camera and image processing modules.
+    * control loop will be:
+    * Camera image --> image processing module --> gcode --> planner --> motion hardware
+    */
+       case RUN:
+        if(sourceFile != ""){
+            //open the source file and begin reading lines
+            ifstream infile(sourceFile.c_str());
 
-        string line;
-        bool eof;
+            string line;
+            bool eof;
 
-        eof = false;
-        /*
-         * Main loop. This should be the delegate between the different modules. No module should do things like
-         * wait in an empty while loop for something or lock the application up for any reason. Modules should be 
-         * kept as standalone as possible
-         * 
-         * - Gcode parser deals with gcode file and parsing
-         * - Motion planner deals with velocity profile generation and interpolation of movements
-         * 
-         */
-               
-         while (!(planner->empty() && eof))
-         {
-             if(planner->data_ready() || state == STOPPING){
-            	//check how many spaces are left in the buffer
-#ifndef HEADLESS
-            	int avail = servodrv_avail(drv);
-#else
-                int avail = BUF_THRESH + 1;
-#endif
-                int num;
-                 
-            	if(avail > BUF_THRESH){
-            		//allocate buffer for elements
-            		uint16_t to_write[avail * NUM_AXIS];
-                        //ask the planner for that many elements
-                        num = planner->interpolate((uint32_t)avail, to_write);
+            eof = false;
+            /*
+             * Main loop. This should be the delegate between the different modules. No module should do things like
+             * wait in an empty while loop for something or lock the application up for any reason. Modules should be 
+             * kept as standalone as possible
+             * 
+             * - Gcode parser deals with gcode file and parsing
+             * - Motion planner deals with velocity profile generation and interpolation of movements
+             * 
+             */
 
-#ifndef HEADLESS
-                        //write to the hardware
-                        servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
-#endif
-                        cout << "wrote " << num << endl;
-            	}
-             }
+             while (!(planner->empty() && eof))
+             {
+                 if(planner->data_ready() || state == STOPPING){
+                    //check how many spaces are left in the buffer
+    #ifndef HEADLESS
+                    int avail = servodrv_avail(drv);
+    #else
+                    int avail = BUF_THRESH + 1;
+    #endif
+                    int num;
 
-             //try to read in a new set of commands
-             if( !eof && cmds.empty() && state != STOPPING){
-                while( 1 ){ //read till we get a valid block or hit EOF
-                    if( !getline(infile, line) ){
-                        eof = true;
-                        state = STOPPING;
-                        stop = STOP_EOF;
-                        break;
+                    if(avail > BUF_THRESH){
+                            //allocate buffer for elements
+                            uint16_t to_write[avail * NUM_AXIS];
+                            //ask the planner for that many elements
+                            num = planner->interpolate((uint32_t)avail, to_write);
+
+    #ifndef HEADLESS
+                            //write to the hardware
+                            servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
+    #endif
+                            cout << "wrote " << num << endl;
                     }
-                    else if( parse.parseBlock(line, cmds) ){
-                        break;
-                    }
-                }
-             }
+                 }
 
-             //if there are unprocessed commands in the cmds buffer, try to process them
-             if(!cmds.empty() && state != STOPPING){
-                vector<cmd_t>::iterator v = cmds.begin();
-                while( v != cmds.end()) {
-                   cmd_t c = *v;
-                   if ( processCommand(c) ){
-                       v = cmds.erase(v);
-                   }
-                   else{
-                       break;
-                   }
-                }
-             }
-
-             //--- PROCESS STOP STATES ---//
-             else if(state == STOPPING){
-                 if( planner->empty() ){
-                        switch(stop){
-                                case STOP_M1:
-                                    state = M1;
-                                    break;
-                                case STOP_G4:
-                                    state = G4;
-                                    break;
+                 //try to read in a new set of commands
+                 if( !eof && cmds.empty() && state != STOPPING){
+                    while( 1 ){ //read till we get a valid block or hit EOF
+                        if( !getline(infile, line) ){
+                            eof = true;
+                            state = STOPPING;
+                            stop = STOP_EOF;
+                            break;
                         }
+                        else if( parse.parseBlock(line, cmds) ){
+                            break;
+                        }
+                    }
+                 }
+
+                 //if there are unprocessed commands in the cmds buffer, try to process them
+                 if(!cmds.empty() && state != STOPPING){
+                    vector<cmd_t>::iterator v = cmds.begin();
+                    while( v != cmds.end()) {
+                       cmd_t c = *v;
+                       if ( processCommand(c) ){
+                           v = cmds.erase(v);
+                       }
+                       else{
+                           break;
+                       }
+                    }
+                 }
+
+                 //--- PROCESS STOP STATES ---//
+                 else if(state == STOPPING){
+                     if( planner->empty() ){
+                            switch(stop){
+                                    case STOP_M1:
+                                        state = M1;
+                                        break;
+                                    case STOP_G4:
+                                        state = G4;
+                                        break;
+                            }
+
+                     }
 
                  }
 
-             }
+                 if(state == M1){
+                     cout << "Machine stopped, press enter to continue...";
 
-             if(state == M1){
-                 cout << "Machine stopped, press enter to continue...";
-
-                 cin.ignore().get(); //Pause Command for Linux Terminal
-                 state = READY;
+                     cin.ignore().get(); //Pause Command for Linux Terminal
+                     state = READY;
+                 }
              }
-         }
-       }
+           }
+           break;
+       case JOG:
+           cout << "we are in jog mode!" << endl;
+           break;
+       case CALIBRATE:
+           cout << "we are in calibrate mode" << endl;
+           
+            try {
+                //open the camera hardware
+                camera = new VC0706(camera_port);
+                cout << "camera successfully opened. " << camera->getVersion() << endl;
+
+            } catch(boost::system::system_error& e)
+            {
+                cout<<"Error: "<<e.what()<<endl;
+                return 1;
+            }
+
+           break;
+   }
 #ifndef HEADLESS
     //close the driver
     servodrv_close(drv);

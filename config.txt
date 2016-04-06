@@ -8,8 +8,6 @@ FEED_MULTIPLY           = 1.0
 LOOKAHEAD_SIZE          = 50
 
 [MACHINE]
-ADDR                    = 0x40
-I2CBUS                  = 2
 LINK_1_LENGTH           = 101.0
 LINK_2_LENGTH           = 101.0
 JOUNCE_MAX              = 200000.0
@@ -19,3 +17,4 @@ MASS                    = 0.5
 INTERPOLATION_PERIOD    = .001
 VELOCITY_MAX            = 40.0
 IMPULSE_MAX             = 5.0
+CAMERA_PORT		= /dev/ttyO4
