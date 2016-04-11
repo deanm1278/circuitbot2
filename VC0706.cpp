@@ -13,26 +13,18 @@
 #include "VC0706.h"
 
 
-#define DEBUG
+//#define DEBUG
 
 VC0706::VC0706(std::string port, unsigned int baud_rate)
 : io(), serial(io,port){
-
-#ifdef DEBUG
-	std::cout << "opening camera..." << std::endl;
-#endif
 
 	serial.set_option(boost::asio::serial_port_base::baud_rate(baud_rate));
 	frameptr  = 0;
 	bufferLen = 0;
 	serialNum = 0;
-	reset();
 }
 
 bool VC0706::reset() {
-#ifdef DEBUG
-	std::cout << "resetting..." << std::endl;
-#endif
 
   uint8_t args[] = {0x0};
 
@@ -118,10 +110,6 @@ bool VC0706::setDownsize(uint8_t newsize) {
 /***************** other high level commands */
 
 char * VC0706::getVersion() {
-
-#ifdef DEBUG
-	std::cout << "getting camera version..." << std::endl;
-#endif
 
   uint8_t args[] = {0x01};
   
@@ -321,34 +309,27 @@ uint8_t VC0706::available(void) {
 }
 
 
-uint8_t * VC0706::readPicture(uint8_t n) {
+bool VC0706::readPicture(uint8_t *buffer, uint16_t len) {
   uint8_t args[] = {0x0C, 0x0, 0x0A, 
                     0, 0, static_cast<uint8_t>(frameptr >> 8), static_cast<uint8_t>(frameptr & 0xFF), 
-                    0, 0, 0, n, 
+                    0, 0, 0, len,
                     CAMERADELAY >> 8, CAMERADELAY & 0xFF};
 
   if (! runCommand(VC0706_READ_FBUF, args, sizeof(args), 5, false))
     return 0;
 
-
-  // read into the buffer PACKETLEN!
-  if (readResponse(n+5, CAMERADELAY) == 0) 
+  if (readResponse(len, 200, buffer) == 0)
       return 0;
 
+  frameptr += len;
 
-  frameptr += n;
-
-  return camerabuff;
+  return 0;
 }
 
 // ********** LOW LEVEL COMMANDS ********** //
 
 bool VC0706::runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
 		   uint8_t resplen, bool flushflag) {
-
-#ifdef DEBUG
-	std::cout << "running command..." << std::endl;
-#endif
 
 	// flush out anything in the buffer?
 	  if (flushflag) {
@@ -365,13 +346,13 @@ bool VC0706::runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
 }
 bool VC0706::runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
                                uint8_t resplen){
-    return runCommand(cmd, args, argn, resplen, 0);
+    return runCommand(cmd, args, argn, resplen, 1);
 }
 
 void VC0706::sendCommand(uint8_t cmd, uint8_t args[] = 0, uint8_t argn = 0) {
-#ifdef DEBUG
-	std::cout << "sending command..." << std::endl;
-#endif
+	//for some reason I don't understand we need to flush this buffer
+	std::flush( std::cout );
+
 	char toWrite[3 + argn];
 	toWrite[0] = VC0706_RECEIVE_SIGN;
 	toWrite[1] = serialNum;
@@ -381,11 +362,7 @@ void VC0706::sendCommand(uint8_t cmd, uint8_t args[] = 0, uint8_t argn = 0) {
 	boost::asio::write(serial, boost::asio::buffer(toWrite, sizeof(uint8_t) * (3 + argn)));
 }
 
-uint8_t VC0706::readResponse(uint8_t numbytes, uint8_t timeout) {
-    //TODO: this needs to be able to read until serial data isn't available. Use async read and a timeout
-#ifdef DEBUG
-	std::cout << "reading response..." << std::endl;
-#endif
+uint16_t VC0706::readResponse(uint16_t numbytes, uint8_t timeout, uint8_t *buffer) {
     //reset buffer length
     bufferLen = 0;
     
@@ -397,7 +374,7 @@ uint8_t VC0706::readResponse(uint8_t numbytes, uint8_t timeout) {
     
     //read bytes into the camera buffer, set buffer length
     boost::optional<boost::system::error_code> read_result;
-    boost::asio::async_read(serial, boost::asio::buffer(camerabuff, numbytes), [&read_result, this] (const boost::system::error_code& error, size_t transferred) { read_result.reset(error); bufferLen = transferred; });
+    boost::asio::async_read(serial, boost::asio::buffer(buffer, numbytes), [&read_result, this] (const boost::system::error_code& error, size_t transferred) { read_result.reset(error); bufferLen = transferred; });
 
     //read till timeout or read limit reached
     serial.get_io_service().reset();
@@ -406,13 +383,14 @@ uint8_t VC0706::readResponse(uint8_t numbytes, uint8_t timeout) {
         if (read_result)
             timer.cancel();
         else if (timer_result){
-#ifdef DEBUG
-            std::cout << "timed out... " << bufferLen << " items in buffer" << std::endl;
-#endif
             serial.cancel();
         }
     }
     return bufferLen;
+}
+
+uint8_t VC0706::readResponse(uint16_t numbytes, uint8_t timeout) {
+	return static_cast<uint8_t>(readResponse(numbytes, timeout, camerabuff));
 }
 
 bool VC0706::verifyResponse(uint8_t command) {

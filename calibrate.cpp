@@ -12,7 +12,7 @@
 #include <cstdio>
 #include <iostream>
 #include <algorithm>
-#include <opencv2/opencv.hpp>
+//#include <opencv2/opencv.hpp>
 
 #include "calibrate.h"
 

@@ -80,7 +80,7 @@ void readConfig(void){ //use as template for our config file
   set.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
   set.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
   
-  camera_port                       = (string)cf.Value("MACHINE", "CAMERA_PORT");
+  camera_port                		= (string)cf.Value("MACHINE", "CAMERA_PORT");
 }
 
 int parseInput(int argc, char**argv){
@@ -377,17 +377,44 @@ bool processCommand(cmd_t c){
            break;
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;
-           
+
             try {
                 //open the camera hardware
                 camera = new VC0706(camera_port);
-                cout << "camera successfully opened. " << camera->getVersion() << endl;
+                if(!camera->reset()){
+                	cout << "camera reset failed!" << endl;
+                	return 1;
+                }
+                char *version = camera->getVersion();
+                if(version){
+                	cout << version << endl;
+                }
+                else{
+                	cout << "failed to get camera version!" << endl;
+                }
+                camera->setImageSize(VC0706_640x480);
 
             } catch(boost::system::system_error& e)
             {
                 cout<<"Error: "<<e.what()<<endl;
                 return 1;
             }
+            /* TODO: uart is waaay slow lets throw some spi on this
+            usleep(999999);
+
+            if (! camera->takePicture())
+                cout << "failed to take pic" << endl;
+              else
+                cout << "picture taken!" << endl;
+
+            uint16_t jpglen = camera->frameLength();
+            uint8_t buffer[jpglen];
+            camera->readPicture(buffer, jpglen);
+
+            ofstream jpg ("output.jpg",std::ofstream::binary);
+            jpg.write((const char *)buffer, jpglen);
+            jpg.close();
+            */
 
            break;
    }

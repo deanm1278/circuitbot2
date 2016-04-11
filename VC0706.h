@@ -62,7 +62,7 @@ public:
 	bool TVon();
 	bool TVoff();
 	bool takePicture();
-	uint8_t *readPicture(uint8_t n);
+	bool readPicture(uint8_t *buffer, uint16_t len);
 	bool resumeVideo();
 	uint32_t frameLength();
 	char *getVersion();
@@ -106,7 +106,8 @@ private:
     bool runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
                                uint8_t resplen);
     void sendCommand(uint8_t cmd, uint8_t args[], uint8_t argn);
-    uint8_t readResponse(uint8_t numbytes, uint8_t timeout);
+    uint16_t readResponse(uint16_t numbytes, uint8_t timeout, uint8_t *buffer);
+    uint8_t readResponse(uint16_t numbytes, uint8_t timeout);
     bool verifyResponse(uint8_t command);
 };
 
