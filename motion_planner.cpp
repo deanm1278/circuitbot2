@@ -44,7 +44,7 @@ std::ofstream speed_logfile;
 
 motion_planner::motion_planner(settings_t _set) : cb(100){
     set = _set;
-    
+    min_buf_len = MIN_BUF_LEN;
 #ifdef LOG_PROFILE
         logfile.open("speed_profile.csv", std::ofstream::out | std::ofstream::trunc);         //Opening file to print info to
         logfile << "speed" << std::endl;
@@ -285,48 +285,68 @@ float motion_planner::_v_bar(float t, std::vector<float> &ad, float vs, float vm
                 
 
 void motion_planner::recalculate(void){
-    //recalculate the entire buffer of data
-    boost::circular_buffer<step_t>::iterator iter = cb.begin();
-    while(std::distance(iter, cb.end()) > 2){
-        step_t step = *iter;
-        step_t next = *(iter + 1);
-        step_t next_2 = *(iter + 2);
+    if(cb.size() == 1){
+        //if there is only one item in the buffer go from the current position to there
+        //end speed will always be 0
+        step_t next = *(cb.begin());
+        next.speed = 0;
+                
+        float L = std::sqrt(std::pow(next.point[X_AXIS] - head.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - head.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - head.point[Z_AXIS], 2));
         
-        float dfdv = this->force(step.point, next.point, next_2.point, 1.0);
-
-        //determine limit speed at next node
-        next.speed = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
-        
-        if(std::distance(iter, cb.end()) > 1){
-            //check if speed is reachable given the length of the line
-            float dm = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
-            float max_reachable = this->_pro_vd(step.speed, dm);
-            next.speed = std::min(next.speed, max_reachable);
-        }
-        
-        *(iter + 1) = next;
-        iter++;
-    }
-    
-    //now calculate the acc/dec profile at each node
-    iter = cb.begin();
-    while(std::distance(iter, cb.end()) > 1){
-        step_t step = *iter;
-        step_t next = *(iter + 1);
-        float L = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
-
-        if(this->_pro_vd(step.speed, L) < set.Vm){
-            _pro_vv(step.speed, next.speed, step.ad_profile);
+        if(this->_pro_vd(head.speed, L) < set.Vm){
+            _pro_vv(head.speed, next.speed, head.ad_profile);
         }
         else{
-            step.vm = _pro_ad(step.speed, next.speed, L, step.ad_profile);
+            head.vm = _pro_ad(head.speed, next.speed, L, head.ad_profile);
         }
-        
-        *iter = step;
-        iter++;
+
+        *(cb.begin()) = next;
+    }
+    else{
+        //recalculate the entire buffer of data
+        boost::circular_buffer<step_t>::iterator iter = cb.begin();
+        while(std::distance(iter, cb.end()) > 2){
+            step_t step = *iter;
+            step_t next = *(iter + 1);
+            step_t next_2 = *(iter + 2);
+
+            float dfdv = this->force(step.point, next.point, next_2.point, 1.0);
+
+            //determine limit speed at next node
+            next.speed = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
+
+            if(std::distance(iter, cb.end()) > 1){
+                //check if speed is reachable given the length of the line
+                float dm = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
+                float max_reachable = this->_pro_vd(step.speed, dm);
+                next.speed = std::min(next.speed, max_reachable);
+            }
+
+            *(iter + 1) = next;
+            iter++;
+        }
+    
+        //now calculate the acc/dec profile at each node
+        iter = cb.begin();
+        while(std::distance(iter, cb.end()) > 1){
+            step_t step = *iter;
+            step_t next = *(iter + 1);
+            float L = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
+
+            if(this->_pro_vd(step.speed, L) < set.Vm){
+                _pro_vv(step.speed, next.speed, step.ad_profile);
+            }
+            else{
+                step.vm = _pro_ad(step.speed, next.speed, L, step.ad_profile);
+            }
+
+            *iter = step;
+            iter++;
+        }
     }
 }
 
+//TODO: the recalculate -> interpolate pipe is still screwy if there are only a few items in the pipe. It should work just as well with only one command
 uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
     //interpolate as much as we can based on max items
     uint32_t num = 0;
@@ -334,10 +354,14 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
     while(num < max_items){
         //pop off the next step if we are at the end of the current one
         if(interp.t_current > interp.tm || (interp.t_current == 0 && interp.tm == 0)){
+            //if we are at the end of interpolating a step, mark this as the machine head
+            if(interp.t_current > interp.tm){
+                head = cb.front();
+                cb.pop_front();
+            }
             if(cb.size() > 1){
                 interp.step = cb.front();
-                cb.pop_front();
-                step_t next = cb.front();
+                step_t next = *(cb.begin() + 1);
                 
                 //reset time and distance
                 interp.t_current = 0 + set.T;
@@ -441,7 +465,7 @@ bool motion_planner::plan_buffer(std::vector<float> &buf, float feedrate){
 }
 
 bool motion_planner::data_ready(){
-    return cb.size() >= MIN_BUF_LEN;
+    return cb.size() >= min_buf_len;
 }
 
 bool motion_planner::full(){

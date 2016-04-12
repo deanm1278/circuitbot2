@@ -134,7 +134,6 @@ int parseInput(int argc, char**argv){
    if(argv[ix] != NULL){ //argv ends with null
     sourceFile = string(argv[ix]);
    }
-   else{ sourceFile = "gctest.gcode"; }
    
    return 0;
       
@@ -277,7 +276,7 @@ int getch()
  */
 int motion_loop(istream& infile){
 
-	if(planner->data_ready() || state == STOPPING || mode == JOG){
+	if(planner->data_ready() || state == STOPPING){
 				//check how many spaces are left in the buffer
 #ifndef HEADLESS
 		int avail = servodrv_avail(drv);
@@ -302,22 +301,25 @@ int motion_loop(istream& infile){
 		}
 	 }
 
-	 //try to read in a new set of commands
-	 if( !infile.eof() && cmds.empty() && state != STOPPING){
-		string line;
-		while( 1 ){ //read till we get a valid block or hit EOF
-			if( !getline(infile, line) ){
-				if(mode != JOG){
-					state = STOPPING;
-					stop = STOP_EOF;
-				}
-				break;
-			}
-			else if( parse.parseBlock(line, cmds) ){
-				break;
-			}
-		}
-	 }
+        if(mode == RUN){
+            //try to read in a new set of commands
+            if( !infile.eof() && cmds.empty() && state != STOPPING){
+                   string line;
+                   while( 1 ){ //read till we get a valid block or hit EOF
+                           if( !getline(infile, line) ){
+                                   break;
+                           }
+                           else if( parse.parseBlock(line, cmds) ){
+                                   break;
+                           }
+                   }
+            }
+           //if we are at end of file send a stop signal
+           if(infile.eof()){
+               state = STOPPING;
+               stop = STOP_EOF;
+           }
+        }
 
 	 //if there are unprocessed commands in the cmds buffer, try to process them
 	 if(!cmds.empty() && state != STOPPING){
@@ -335,17 +337,17 @@ int motion_loop(istream& infile){
 
 	 //--- PROCESS STOP STATES ---//
 	 else if(state == STOPPING){
-		 if( planner->empty() ){
-				switch(stop){
-						case STOP_M1:
-							state = M1;
-							break;
-						case STOP_G4:
-							state = G4;
-							break;
-				}
+            if( planner->empty() ){
+                switch(stop){
+                    case STOP_M1:
+                            state = M1;
+                            break;
+                    case STOP_G4:
+                            state = G4;
+                            break;
+                }
 
-		 }
+            }
 
 	 }
 
@@ -388,19 +390,30 @@ int motion_loop(istream& infile){
     * Camera image --> image processing module --> gcode --> planner --> motion hardware
     */
        case RUN:
-        if(sourceFile != ""){
+           if(sourceFile != ""){
             //open the source file and begin reading lines
             ifstream infile(sourceFile.c_str());
-
              while (!motion_loop(infile));
+           }
+           else{
+               cout << "no source file specified!" << endl;
+               return 1;
            }
            break;
        case JOG:
        {
+           planner->min_buf_len = 3;
            cout << "we are in jog mode!" << endl;
-           ofstream jogfile("jogfile.gcode");
-           ifstream infile("jogfile.gcode");
-
+           istringstream dummy; //fake infile. We will just feed the cmd buffer manually
+           
+           cmd_t zero;
+           zero.letter = 'G';
+           zero.number = 0;
+           zero.params['X'] = 0.0;
+           zero.params['Y'] = 0.0;
+           zero.params['Z'] = 0.0;
+           cmds.push_back(zero);
+           
            float zPos = 0.0;
            float xPos = 0.0;
            float yPos = 0.0;
@@ -408,43 +421,48 @@ int motion_loop(istream& infile){
            float jogstep = 0.5;
 
            while(1){
-        	   int c = getch();   // call your non-blocking input function
-        	   if(c){
-        		   switch(c){
-        		   case 53: //page up, z axis up
-        			   zPos += jogstep;
-        			   jogfile << "G0 Z" << zPos << endl;
-        			   break;
-        		   case 54: //page down, z axis down
-        			   zPos -= jogstep;
-        			   jogfile << "G0 Z" << zPos << endl;
-        			   break;
-        		   case 65: //up arrow, y axis up
-        			   yPos += jogstep;
-        			   jogfile << "G0 Y" << yPos << endl;
-        			   break;
-        		   case 66: //down arrow, y axis down
-        			   yPos -= jogstep;
-        			   jogfile << "G0 Y" << yPos << endl;
-        			   break;
-        		   case 67: //right arrow, x axis up
-        			   xPos += jogstep;
-        			   jogfile << "G0 X" << xPos << endl;
-        			   break;
-        		   case 68: //left arrow, x axis down
-        			   xPos -= jogstep;
-        			   jogfile << "G0 X" << xPos << endl;
-        			   break;
-        		   default:
-        			   //do nothing
-        			   break;
-        		   }
+        	   int ch = getch();   // call your non-blocking input function
+        	   if(ch){
+                       bool found = true;
+                       cmd_t c;
+                       c.letter = 'G';
+                       c.number = 0;
+                        switch(ch){
+                        case 53: //page up, z axis up
+                                zPos += jogstep;
+                                c.params['Z'] = zPos;
+                                break;
+                        case 54: //page down, z axis down
+                                zPos -= jogstep;
+                                c.params['Z'] = zPos;
+                                break;
+                        case 65: //up arrow, y axis up
+                                yPos += jogstep;
+                                c.params['Y'] = yPos;
+                                break;
+                        case 66: //down arrow, y axis down
+                                yPos -= jogstep;
+                                c.params['Y'] = yPos;
+                                break;
+                        case 67: //right arrow, x axis up
+                                xPos += jogstep;
+                                c.params['X'] = xPos;
+                                break;
+                        case 68: //left arrow, x axis down
+                                xPos -= jogstep;
+                                c.params['X'] = xPos;
+                                break;
+                        default:
+                            found = false;
+                                break;
+                        }
+                        if(found){
+                            cmds.push_back(c);
+                        }
         	   }
-        	   infile.sync();
-        	   motion_loop(infile);
-        	   infile.clear();
-           }
-       }
+        	   motion_loop(dummy);
+                }
+            }
            break;
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;

@@ -18,7 +18,6 @@
 #define	MOTION_PLANNER_H
 
 #define MIN_BUF_LEN 10
-
 #define RAD_TO_TICK 65189.8647
 #define TO_FIXED 10000
 
@@ -122,9 +121,16 @@ public:
     int size();
     void pop();
     virtual ~motion_planner();
+    
+    int min_buf_len; //minimum number of steps that must be in the buffer before we start interpolating
 private:
     settings_t set;
-    interpolate_t interp;
+    interpolate_t interp; //the current interpolation position
+    long int last_pos[NUM_AXIS]; //previous position of motors in interpolation cycle
+    step_t head;
+    
+    boost::circular_buffer<step_t> cb; //buffer to store steps in
+    
     float force(float a[NUM_AXIS], float b[NUM_AXIS], float c[NUM_AXIS], float V); //return the impulse of an angle (XYZ) at a speed (V)
     float _pro_vd(float vs, float dm); //return the max speed reachable with a specified starting speed (vs) and distance (dm)
     bool _pro_vv(float vs, float ve, std::vector<float> &ad); //return the A/D profile (t1, t2, t3) in vector ad
@@ -133,8 +139,6 @@ private:
     int calculate_delta(float cartesian[NUM_AXIS], long int delta[NUM_AXIS]);
     float _v_bar(float t, std::vector<float> &ad, float vs, float vm);
     void zero(void);
-    long int last_pos[NUM_AXIS];
-    boost::circular_buffer<step_t> cb;
 };
 
 #endif	/* MOTION_PLANNER_H */
