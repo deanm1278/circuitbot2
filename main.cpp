@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <cmath>
 #include <iterator>
@@ -30,7 +31,7 @@
 
 #define BUF_THRESH 799
 
-typedef enum {READY, G1, STOPPING, G4, M1} state_T;
+typedef enum {READY, G1, STOPPING, G4, M1, JOGGING} state_T;
 typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;
 typedef enum {UNSET, JOG, CALIBRATE, RUN} cbot_run_mode;
 
@@ -247,6 +248,118 @@ bool processCommand(cmd_t c){
     return 1;
 }
 
+//non blocking key read
+int getch()
+{
+  static struct termios oldt, newt;
+  tcgetattr( STDIN_FILENO, &oldt);           // save old settings
+  newt = oldt;
+  newt.c_lflag &= ~(ICANON);                 // disable buffering
+  tcsetattr( STDIN_FILENO, TCSANOW, &newt);  // apply new settings
+
+  int c = getchar();  // read character (non-blocking)
+
+  tcsetattr( STDIN_FILENO, TCSANOW, &oldt);  // restore old settings
+  return c;
+}
+
+/*
+ * Main loop. This should be the delegate between the different modules. No module should do things like
+ * wait in an empty while loop for something or lock the application up for any reason. Modules should be
+ * kept as standalone as possible
+ *
+ * - Gcode parser deals with gcode file and parsing
+ * - Motion planner deals with velocity profile generation and interpolation of movements
+ * - Servodrv driver deals with output of data to the motion control hardware
+ *
+ * return 0 unless EOF is reached and the planner is empty.
+ * Takes a stream buffer as input
+ */
+int motion_loop(istream& infile){
+
+	if(planner->data_ready() || state == STOPPING || mode == JOG){
+				//check how many spaces are left in the buffer
+#ifndef HEADLESS
+		int avail = servodrv_avail(drv);
+#else
+		int avail = BUF_THRESH + 1;
+#endif
+		int num;
+
+		if(avail > BUF_THRESH){
+			//allocate buffer for elements
+			uint16_t to_write[avail * NUM_AXIS];
+			//ask the planner for that many elements
+			num = planner->interpolate((uint32_t)avail, to_write);
+
+			if(num > 0){
+#ifndef HEADLESS
+				//write to the hardware
+				servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
+#endif
+				cout << "wrote " << num << endl;
+			}
+		}
+	 }
+
+	 //try to read in a new set of commands
+	 if( !infile.eof() && cmds.empty() && state != STOPPING){
+		string line;
+		while( 1 ){ //read till we get a valid block or hit EOF
+			if( !getline(infile, line) ){
+				if(mode != JOG){
+					state = STOPPING;
+					stop = STOP_EOF;
+				}
+				break;
+			}
+			else if( parse.parseBlock(line, cmds) ){
+				break;
+			}
+		}
+	 }
+
+	 //if there are unprocessed commands in the cmds buffer, try to process them
+	 if(!cmds.empty() && state != STOPPING){
+		vector<cmd_t>::iterator v = cmds.begin();
+		while( v != cmds.end()) {
+		   cmd_t c = *v;
+		   if ( processCommand(c) ){
+			   v = cmds.erase(v);
+		   }
+		   else{
+			   break;
+		   }
+		}
+	 }
+
+	 //--- PROCESS STOP STATES ---//
+	 else if(state == STOPPING){
+		 if( planner->empty() ){
+				switch(stop){
+						case STOP_M1:
+							state = M1;
+							break;
+						case STOP_G4:
+							state = G4;
+							break;
+				}
+
+		 }
+
+	 }
+
+	 if(state == M1){
+		 cout << "Machine stopped, press enter to continue...";
+
+		 cin.ignore().get(); //Pause Command for Linux Terminal
+		 state = READY;
+	 }
+
+	 if(infile.eof() && planner->empty()) return 1;
+	 else return 0;
+}
+
  int main (int argc, char **argv)
  {       
    readConfig(); //read config file
@@ -279,101 +392,59 @@ bool processCommand(cmd_t c){
             //open the source file and begin reading lines
             ifstream infile(sourceFile.c_str());
 
-            string line;
-            bool eof;
-
-            eof = false;
-            /*
-             * Main loop. This should be the delegate between the different modules. No module should do things like
-             * wait in an empty while loop for something or lock the application up for any reason. Modules should be 
-             * kept as standalone as possible
-             * 
-             * - Gcode parser deals with gcode file and parsing
-             * - Motion planner deals with velocity profile generation and interpolation of movements
-             * 
-             */
-
-             while (!(planner->empty() && eof))
-             {
-                 if(planner->data_ready() || state == STOPPING){
-                    //check how many spaces are left in the buffer
-    #ifndef HEADLESS
-                    int avail = servodrv_avail(drv);
-    #else
-                    int avail = BUF_THRESH + 1;
-    #endif
-                    int num;
-
-                    if(avail > BUF_THRESH){
-                            //allocate buffer for elements
-                            uint16_t to_write[avail * NUM_AXIS];
-                            //ask the planner for that many elements
-                            num = planner->interpolate((uint32_t)avail, to_write);
-
-    #ifndef HEADLESS
-                            //write to the hardware
-                            servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
-    #endif
-                            cout << "wrote " << num << endl;
-                    }
-                 }
-
-                 //try to read in a new set of commands
-                 if( !eof && cmds.empty() && state != STOPPING){
-                    while( 1 ){ //read till we get a valid block or hit EOF
-                        if( !getline(infile, line) ){
-                            eof = true;
-                            state = STOPPING;
-                            stop = STOP_EOF;
-                            break;
-                        }
-                        else if( parse.parseBlock(line, cmds) ){
-                            break;
-                        }
-                    }
-                 }
-
-                 //if there are unprocessed commands in the cmds buffer, try to process them
-                 if(!cmds.empty() && state != STOPPING){
-                    vector<cmd_t>::iterator v = cmds.begin();
-                    while( v != cmds.end()) {
-                       cmd_t c = *v;
-                       if ( processCommand(c) ){
-                           v = cmds.erase(v);
-                       }
-                       else{
-                           break;
-                       }
-                    }
-                 }
-
-                 //--- PROCESS STOP STATES ---//
-                 else if(state == STOPPING){
-                     if( planner->empty() ){
-                            switch(stop){
-                                    case STOP_M1:
-                                        state = M1;
-                                        break;
-                                    case STOP_G4:
-                                        state = G4;
-                                        break;
-                            }
-
-                     }
-
-                 }
-
-                 if(state == M1){
-                     cout << "Machine stopped, press enter to continue...";
-
-                     cin.ignore().get(); //Pause Command for Linux Terminal
-                     state = READY;
-                 }
-             }
+             while (!motion_loop(infile));
            }
            break;
        case JOG:
+       {
            cout << "we are in jog mode!" << endl;
+           ofstream jogfile("jogfile.gcode");
+           ifstream infile("jogfile.gcode");
+
+           float zPos = 0.0;
+           float xPos = 0.0;
+           float yPos = 0.0;
+
+           float jogstep = 0.5;
+
+           while(1){
+        	   int c = getch();   // call your non-blocking input function
+        	   if(c){
+        		   switch(c){
+        		   case 53: //page up, z axis up
+        			   zPos += jogstep;
+        			   jogfile << "G0 Z" << zPos << endl;
+        			   break;
+        		   case 54: //page down, z axis down
+        			   zPos -= jogstep;
+        			   jogfile << "G0 Z" << zPos << endl;
+        			   break;
+        		   case 65: //up arrow, y axis up
+        			   yPos += jogstep;
+        			   jogfile << "G0 Y" << yPos << endl;
+        			   break;
+        		   case 66: //down arrow, y axis down
+        			   yPos -= jogstep;
+        			   jogfile << "G0 Y" << yPos << endl;
+        			   break;
+        		   case 67: //right arrow, x axis up
+        			   xPos += jogstep;
+        			   jogfile << "G0 X" << xPos << endl;
+        			   break;
+        		   case 68: //left arrow, x axis down
+        			   xPos -= jogstep;
+        			   jogfile << "G0 X" << xPos << endl;
+        			   break;
+        		   default:
+        			   //do nothing
+        			   break;
+        		   }
+        	   }
+        	   infile.sync();
+        	   motion_loop(infile);
+        	   infile.clear();
+           }
+       }
            break;
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;
