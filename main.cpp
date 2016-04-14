@@ -15,6 +15,7 @@
 #include <vector>
 #include <cmath>
 #include <iterator>
+#include <algorithm>
 
 #include "main.h"
 #include "ConfigFile.h"
@@ -30,6 +31,7 @@
 #endif
 
 #define BUF_THRESH 799
+#define INTERP_MAX 800
 
 typedef enum {READY, G1, STOPPING, G4, M1, JOGGING} state_T;
 typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;
@@ -50,6 +52,8 @@ settings_t set; //stores machine settings from the config file
 gcParser parse; //gcode parser
 
 motion_planner *planner;
+
+int drv; //File descriptor for servodrv
 
 VC0706 *camera; //camera for calibration
 string camera_port;
@@ -289,7 +293,7 @@ int motion_loop(istream& infile){
 			//allocate buffer for elements
 			uint16_t to_write[avail * NUM_AXIS];
 			//ask the planner for that many elements
-			num = planner->interpolate((uint32_t)avail, to_write);
+			num = planner->interpolate(min(avail, INTERP_MAX), to_write);
 
 			if(num > 0){
 #ifndef HEADLESS
@@ -374,7 +378,7 @@ int motion_loop(istream& infile){
    
 #ifndef HEADLESS
    //we will use the servodrv hardware api
-   int drv = servodrv_open();
+   drv = servodrv_open();
    if(drv > -1){
 	   cout << "servodrv opened successfully" << endl;
    }
@@ -402,7 +406,7 @@ int motion_loop(istream& infile){
            break;
        case JOG:
        {
-           planner->min_buf_len = 3;
+           planner->min_buf_len = 4;
            cout << "we are in jog mode!" << endl;
            istringstream dummy; //fake infile. We will just feed the cmd buffer manually
            
@@ -418,7 +422,7 @@ int motion_loop(istream& infile){
            float xPos = 0.0;
            float yPos = 0.0;
 
-           float jogstep = 0.5;
+           float jogstep = .5;
 
            while(1){
         	   int ch = getch();   // call your non-blocking input function

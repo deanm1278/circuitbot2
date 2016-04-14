@@ -42,7 +42,7 @@ std::ofstream path_logfile;
 std::ofstream speed_logfile;
 #endif
 
-motion_planner::motion_planner(settings_t _set) : cb(100){
+motion_planner::motion_planner(settings_t _set) : cb(100), head(){
     set = _set;
     min_buf_len = MIN_BUF_LEN;
 #ifdef LOG_PROFILE
@@ -61,6 +61,7 @@ motion_planner::motion_planner(settings_t _set) : cb(100){
         speed_logfile.open("speed.csv", std::ofstream::out | std::ofstream::trunc);
         speed_logfile << "x,y,z" << std::endl;
 #endif
+
 
     //set current starting position on the machine (NOTE: we assume the hardware has already zeroed itself out)
     zero();
@@ -285,65 +286,42 @@ float motion_planner::_v_bar(float t, std::vector<float> &ad, float vs, float vm
                 
 
 void motion_planner::recalculate(void){
-    if(cb.size() == 1){
-        //if there is only one item in the buffer go from the current position to there
-        //end speed will always be 0
-        step_t next = *(cb.begin());
-        next.speed = 0;
-                
-        float L = std::sqrt(std::pow(next.point[X_AXIS] - head.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - head.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - head.point[Z_AXIS], 2));
-        
-        if(this->_pro_vd(head.speed, L) < set.Vm){
-            _pro_vv(head.speed, next.speed, head.ad_profile);
-        }
-        else{
-            head.vm = _pro_ad(head.speed, next.speed, L, head.ad_profile);
-        }
+	//recalculate the entire buffer of data
+	boost::circular_buffer<step_t>::iterator iter = cb.begin();
 
-        *(cb.begin()) = next;
-    }
-    else{
-        //recalculate the entire buffer of data
-        boost::circular_buffer<step_t>::iterator iter = cb.begin();
-        while(std::distance(iter, cb.end()) > 2){
-            step_t step = *iter;
-            step_t next = *(iter + 1);
-            step_t next_2 = *(iter + 2);
+	while(iter != cb.end()){
+		step_t step = *iter;
 
-            float dfdv = this->force(step.point, next.point, next_2.point, 1.0);
+		float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
 
-            //determine limit speed at next node
-            next.speed = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
+		//determine start speed at this node
+		step.vs = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
 
-            if(std::distance(iter, cb.end()) > 1){
-                //check if speed is reachable given the length of the line
-                float dm = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
-                float max_reachable = this->_pro_vd(step.speed, dm);
-                next.speed = std::min(next.speed, max_reachable);
-            }
+		//check if speed is reachable given the length of the line
+		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
+		float max_reachable = this->_pro_vd(step.previous->vs, step.L);
+		step.vs = std::min(step.vs, max_reachable);
+		step.previous->ve = step.vs;
 
-            *(iter + 1) = next;
-            iter++;
-        }
-    
-        //now calculate the acc/dec profile at each node
-        iter = cb.begin();
-        while(std::distance(iter, cb.end()) > 1){
-            step_t step = *iter;
-            step_t next = *(iter + 1);
-            float L = std::sqrt(std::pow(next.point[X_AXIS] - step.point[X_AXIS], 2) + std::pow(next.point[Y_AXIS] - step.point[Y_AXIS], 2) + std::pow(next.point[Z_AXIS] - step.point[Z_AXIS], 2));
+		*iter = step;
+		iter++;
+	}
 
-            if(this->_pro_vd(step.speed, L) < set.Vm){
-                _pro_vv(step.speed, next.speed, step.ad_profile);
-            }
-            else{
-                step.vm = _pro_ad(step.speed, next.speed, L, step.ad_profile);
-            }
+	//now calculate the acc/dec profile at each node
+	iter = cb.begin();
+	while(iter != cb.end()){
+		step_t step = *iter;
 
-            *iter = step;
-            iter++;
-        }
-    }
+		if(this->_pro_vd(step.vs, step.L) < set.Vm){
+			_pro_vv(step.vs, step.ve, step.ad_profile);
+		}
+		else{
+			step.vm = _pro_ad(step.vs, step.ve, step.L, step.ad_profile);
+		}
+
+		*iter = step;
+		iter++;
+	}
 }
 
 //TODO: the recalculate -> interpolate pipe is still screwy if there are only a few items in the pipe. It should work just as well with only one command
@@ -351,6 +329,10 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
     //interpolate as much as we can based on max items
     uint32_t num = 0;
 
+    if(cb.size() < 1){
+    	//there is nothing to interpolate
+    	return num;
+    }
     while(num < max_items){
         //pop off the next step if we are at the end of the current one
         if(interp.t_current > interp.tm || (interp.t_current == 0 && interp.tm == 0)){
@@ -359,45 +341,33 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                 head = cb.front();
                 cb.pop_front();
             }
-            if(cb.size() > 1){
-                interp.step = cb.front();
-                step_t next = *(cb.begin() + 1);
-                
-                //reset time and distance
-                interp.t_current = 0 + set.T;
-                interp.dist = 0;
-                //total distance of line
-                interp.L = sqrt(pow(next.point[X_AXIS] - interp.step.point[X_AXIS], 2) + pow(next.point[Y_AXIS] - interp.step.point[Y_AXIS],2) + pow(next.point[Z_AXIS] - interp.step.point[Z_AXIS],2));
-                
-                interp.vs = interp.step.speed;
-                interp.ve = next.speed;
-                
-                //set the total time to complete the profile based on whether we have 3 or 7 periods
-                if(interp.step.ad_profile.size() == 3){
-                    //equation 9
-                    interp.dm = (interp.vs + interp.ve) / 2 * (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2));
-                    interp.tm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2)) * interp.L / interp.dm;
-                }
-                else{
-                    interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.ve + interp.step.vm)/2;
-                    float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
-                    interp.tm = tmp_tm * interp.L / interp.dm;
-                }
-                
-                //get all direction cosines
-                for(int i=0; i<NUM_AXIS; i++){
-                	interp.cosines[i] = (next.point[i] - interp.step.point[i]) / interp.L;
-                }
-            }
-            else {
-                return num;
-            }
+			interp.step = cb.front();
+
+			//reset time and distance
+			interp.t_current = 0 + set.T;
+			interp.dist = 0;
+			//set the total time to complete the profile based on whether we have 3 or 7 periods
+			if(interp.step.ad_profile.size() == 3){
+				//equation 9
+				interp.dm = (interp.step.vs + interp.step.ve) / 2 * (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2));
+				interp.tm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2)) * interp.step.L / interp.dm;
+			}
+			else{
+				interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.step.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.step.ve + interp.step.vm)/2;
+				float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
+				interp.tm = tmp_tm * interp.step.L / interp.dm;
+			}
+
+			//get all direction cosines
+			for(int i=0; i<NUM_AXIS; i++){
+				interp.cosines[i] = (interp.step.point[i] - interp.step.previous->point[i]) / interp.step.L;
+			}
         }
         //get speed
-        if(interp.step.ad_profile.size() == 7) interp.speed =  _v_bar(interp.t_current * interp.dm / interp.L, interp.step.ad_profile, interp.vs, interp.step.vm);
+        if(interp.step.ad_profile.size() == 7) interp.speed =  _v_bar(interp.t_current * interp.dm / interp.step.L, interp.step.ad_profile, interp.step.vs, interp.step.vm);
         else{
-            if(interp.vs <= interp.ve) interp.speed = interp.vs + _v0(interp.t_current * interp.dm / interp.L, interp.step.ad_profile);
-            else interp.speed = interp.vs - _v0(interp.t_current * interp.dm / interp.L, interp.step.ad_profile);
+            if(interp.step.vs <= interp.step.ve) interp.speed = interp.step.vs + _v0(interp.t_current * interp.dm / interp.step.L, interp.step.ad_profile);
+            else interp.speed = interp.step.vs - _v0(interp.t_current * interp.dm / interp.step.L, interp.step.ad_profile);
         }
 
 #ifdef LOG_PROFILE
@@ -409,7 +379,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
         float destination[NUM_AXIS];
         //split out x y and z components of speed
         for(int i=0; i<NUM_AXIS; i++){
-			destination[i] = interp.step.point[i] + interp.cosines[i] * interp.dist;
+			destination[i] = interp.step.previous->point[i] + interp.cosines[i] * interp.dist;
 		}
 
 #ifdef LOG_PATH
@@ -458,8 +428,32 @@ bool motion_planner::plan_buffer(std::vector<float> &buf, float feedrate){
     step_t step;
     std::copy(buf.begin(), buf.end(), step.point);
     step.feedrate = feedrate;
-    
-    cb.push_back(step);
+
+    //set the pointers
+    if(cb.size() > 0){
+       	cb.push_back(step);
+
+        boost::circular_buffer<step_t>::reverse_iterator iter = cb.rbegin();
+
+    	step.previous = &(*(iter + 1));
+
+    	//set the previous steps next to the one we've just pushed
+    	free(step.previous->next);
+
+    	step.previous->next = &(*(iter));
+        //create a blank next step since this is the end of the buffer
+        step.next = (step_t *)malloc(sizeof(struct step_t));
+
+        *iter = step;
+    }
+    else{
+    	step.previous = &head;
+
+    	//create a blank next step since this is the end of the buffer
+    	step.next = (step_t *)malloc(sizeof(struct step_t));
+    	cb.push_back(step);
+    }
+
     this->recalculate();
     return 1;
 }
@@ -473,7 +467,7 @@ bool motion_planner::full(){
 }
 
 bool motion_planner::empty(){
-    return cb.size() == 0 || (size() == 1 && interp.t_current > interp.tm);
+    return cb.size() == 0;
 }
 
 int motion_planner::size(){
