@@ -292,17 +292,22 @@ void motion_planner::recalculate(void){
 	while(iter != cb.end()){
 		step_t step = *iter;
 
-		float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
+                if(std::distance(iter, cb.end()) > 1){
+                    float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
 
-		//determine start speed at this node
-		step.vs = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
-
+                    //determine end speed at this node
+                    step.ve = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
+                }
+                else{
+                    //the end speed at the last node will always be 0
+                    step.ve = 0.0;
+                }
 		//check if speed is reachable given the length of the line
 		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
-		float max_reachable = this->_pro_vd(step.previous->vs, step.L);
-		step.vs = std::min(step.vs, max_reachable);
-		step.previous->ve = step.vs;
-
+		float max_reachable = this->_pro_vd(step.vs, step.L);
+		step.ve = std::min(step.ve, max_reachable);
+		step.next->vs = step.ve;
+                
 		*iter = step;
 		iter++;
 	}
@@ -329,7 +334,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
     //interpolate as much as we can based on max items
     uint32_t num = 0;
 
-    if(cb.size() < 1){
+    if(this->empty()){
     	//there is nothing to interpolate
     	return num;
     }
@@ -341,27 +346,33 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                 head = cb.front();
                 cb.pop_front();
             }
-			interp.step = cb.front();
+            //if we have run out of items in the buffer, return
+            if(this->empty()){
+                return num;
+            }
+            
+            interp.step = cb.front();
+            interp.step.previous = &head;
 
-			//reset time and distance
-			interp.t_current = 0 + set.T;
-			interp.dist = 0;
-			//set the total time to complete the profile based on whether we have 3 or 7 periods
-			if(interp.step.ad_profile.size() == 3){
-				//equation 9
-				interp.dm = (interp.step.vs + interp.step.ve) / 2 * (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2));
-				interp.tm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2)) * interp.step.L / interp.dm;
-			}
-			else{
-				interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.step.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.step.ve + interp.step.vm)/2;
-				float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
-				interp.tm = tmp_tm * interp.step.L / interp.dm;
-			}
+            //reset time and distance
+            interp.t_current = 0 + set.T;
+            interp.dist = 0;
+            //set the total time to complete the profile based on whether we have 3 or 7 periods
+            if(interp.step.ad_profile.size() == 3){
+                    //equation 9
+                    interp.dm = (interp.step.vs + interp.step.ve) / 2 * (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2));
+                    interp.tm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2)) * interp.step.L / interp.dm;
+            }
+            else{
+                    interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.step.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.step.ve + interp.step.vm)/2;
+                    float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
+                    interp.tm = tmp_tm * interp.step.L / interp.dm;
+            }
 
-			//get all direction cosines
-			for(int i=0; i<NUM_AXIS; i++){
-				interp.cosines[i] = (interp.step.point[i] - interp.step.previous->point[i]) / interp.step.L;
-			}
+            //get all direction cosines
+            for(int i=0; i<NUM_AXIS; i++){
+                    interp.cosines[i] = (interp.step.point[i] - interp.step.previous->point[i]) / interp.step.L;
+            }
         }
         //get speed
         if(interp.step.ad_profile.size() == 7) interp.speed =  _v_bar(interp.t_current * interp.dm / interp.step.L, interp.step.ad_profile, interp.step.vs, interp.step.vm);

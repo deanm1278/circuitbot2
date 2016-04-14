@@ -31,7 +31,7 @@
 #endif
 
 #define BUF_THRESH 799
-#define INTERP_MAX 800
+#define INTERP_MAX 50
 
 typedef enum {READY, G1, STOPPING, G4, M1, JOGGING} state_T;
 typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;
@@ -210,6 +210,7 @@ bool processCommand(cmd_t c){
                 case 1:         // M1   - Same as M0
                     state = STOPPING;
                     stop = STOP_M1;
+                    planner->min_buf_len = 1;
                     break;
                 case 17:        // M17  - Enable/Power all stepper motors
                     break;
@@ -280,7 +281,7 @@ int getch()
  */
 int motion_loop(istream& infile){
 
-	if(planner->data_ready() || state == STOPPING){
+	if(planner->data_ready()){
 				//check how many spaces are left in the buffer
 #ifndef HEADLESS
 		int avail = servodrv_avail(drv);
@@ -307,7 +308,7 @@ int motion_loop(istream& infile){
 
         if(mode == RUN){
             //try to read in a new set of commands
-            if( !infile.eof() && cmds.empty() && state != STOPPING){
+            if( !infile.eof() && cmds.empty() ){
                    string line;
                    while( 1 ){ //read till we get a valid block or hit EOF
                            if( !getline(infile, line) ){
@@ -318,10 +319,9 @@ int motion_loop(istream& infile){
                            }
                    }
             }
-           //if we are at end of file send a stop signal
+           //we are at end of file. set min buf len (lookahead size) to 1 to flush out all remaining items
            if(infile.eof()){
-               state = STOPPING;
-               stop = STOP_EOF;
+               planner->min_buf_len = 1;
            }
         }
 
@@ -389,11 +389,8 @@ int motion_loop(istream& infile){
 #endif
    
    switch(mode){  
-   /* Auto-home the machine using the camera and image processing modules.
-    * control loop will be:
-    * Camera image --> image processing module --> gcode --> planner --> motion hardware
-    */
        case RUN:
+           //execute a gcode file
            if(sourceFile != ""){
             //open the source file and begin reading lines
             ifstream infile(sourceFile.c_str());
@@ -406,23 +403,15 @@ int motion_loop(istream& infile){
            break;
        case JOG:
        {
-           planner->min_buf_len = 4;
+           planner->min_buf_len = 1;
            cout << "we are in jog mode!" << endl;
            istringstream dummy; //fake infile. We will just feed the cmd buffer manually
-           
-           cmd_t zero;
-           zero.letter = 'G';
-           zero.number = 0;
-           zero.params['X'] = 0.0;
-           zero.params['Y'] = 0.0;
-           zero.params['Z'] = 0.0;
-           cmds.push_back(zero);
            
            float zPos = 0.0;
            float xPos = 0.0;
            float yPos = 0.0;
 
-           float jogstep = .5;
+           float jogstep = 5;
 
            while(1){
         	   int ch = getch();   // call your non-blocking input function
@@ -471,6 +460,10 @@ int motion_loop(istream& infile){
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;
 
+   /* Auto-home the machine using the camera and image processing modules.
+    * control loop will be:
+    * Camera image --> image processing module --> gcode --> planner --> motion hardware
+    */
             try {
                 //open the camera hardware
                 camera = new VC0706(camera_port);

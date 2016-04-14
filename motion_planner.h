@@ -22,16 +22,15 @@
 #define TO_FIXED 10000
 
 typedef struct step_t{
-    float point[NUM_AXIS];	//xyz point at this node
+    float point[NUM_AXIS] = {0.0, 0.0, 0.0};	//xyz point at this node
     float feedrate = 0.0;
-    float speed = 0.0;
-    float vm = 0.0;
+    float vm = 0.0;     //maximum speed at node
     float vs = 0.0;	//start speed at this node
     float ve = 0.0;	//end speed at this node
     float L = 0.0;	//length of line
     std::vector<float> ad_profile;	//acceleration profile
-    step_t *previous;
-    step_t *next;
+    step_t *previous;   //pointer to previous node
+    step_t *next;       //pointer to next node
 } step_t;
 
 typedef struct settings_t{
