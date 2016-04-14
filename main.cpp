@@ -16,6 +16,7 @@
 #include <cmath>
 #include <iterator>
 #include <algorithm>
+#include "boost/circular_buffer.hpp"
 
 #include "main.h"
 #include "ConfigFile.h"
@@ -46,7 +47,10 @@ stop_T stop; //stores impending stop states
 
 cbot_run_mode mode; //machine mode
 
-vector<cmd_t> cmds; //stores gcode commands the parser gives us
+float conversion;
+float scale;
+
+boost::circular_buffer<cmd_t> cmds; //stores gcode commands the parser gives us
 settings_t set; //stores machine settings from the config file
 
 gcParser parse; //gcode parser
@@ -167,15 +171,15 @@ bool processCommand(cmd_t c){
                 case 1:{         // G1  - Coordinated Movement X Y Z
                     state = G1;
                     if ( c.params.find('X') != c.params.end() ) {
-                        destination[X_AXIS] = c.params['X'];
+                        destination[X_AXIS] = c.params['X'] * conversion * scale;
                       }
                     else{ destination[X_AXIS] = current_position[X_AXIS]; }
                     if ( c.params.find('Y') != c.params.end() ) {
-                        destination[Y_AXIS] = c.params['Y'];
+                        destination[Y_AXIS] = c.params['Y'] * conversion * scale;
                       }
                     else{ destination[Y_AXIS] = current_position[Y_AXIS]; }
                     if ( c.params.find('Z') != c.params.end() ) {
-                        destination[Z_AXIS] = c.params['Z'];
+                        destination[Z_AXIS] = c.params['Z'] * conversion * scale;
                       }
                     else{ destination[Z_AXIS] = current_position[Z_AXIS]; }
                     if ( c.params.find('F') != c.params.end() ){ feedrate = c.params['F']; }
@@ -190,6 +194,12 @@ bool processCommand(cmd_t c){
                 case 4:         // G4  - Dwell S<seconds> or P<milliseconds>
                     state = STOPPING;
                     stop = STOP_G4;
+                    break;
+                case 20:        // G20 - Use inches
+                    conversion = 25.4;
+                    break;
+                case 21:        // G21 - Use millimeters
+                    conversion = 1.0;
                     break;
                 case 28:        // G28 - Home all Axis
                     break;
@@ -224,15 +234,15 @@ bool processCommand(cmd_t c){
         case NO_LETTER:
             if(state == G1){
                     if ( c.params.find('X') != c.params.end() ) {
-                        destination[X_AXIS] = c.params['X'];
+                        destination[X_AXIS] = c.params['X'] * conversion * scale;
                       }
                     else{ destination[X_AXIS] = current_position[X_AXIS]; }
                     if ( c.params.find('Y') != c.params.end() ) {
-                        destination[Y_AXIS] = c.params['Y'];
+                        destination[Y_AXIS] = c.params['Y'] * conversion * scale;
                       }
                     else{ destination[Y_AXIS] = current_position[Y_AXIS]; }
                     if ( c.params.find('Z') != c.params.end() ) {
-                        destination[Z_AXIS] = c.params['Z'];
+                        destination[Z_AXIS] = c.params['Z'] * conversion * scale;
                       }
                     else{ destination[Z_AXIS] = current_position[Z_AXIS]; }
                     if ( c.params.find('F') != c.params.end() ){ feedrate = c.params['F']; }
@@ -301,7 +311,7 @@ int motion_loop(istream& infile){
 				//write to the hardware
 				servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
 #endif
-				cout << "wrote " << num << endl;
+				//cout << "wrote " << num << endl;
 			}
 		}
 	 }
@@ -327,11 +337,12 @@ int motion_loop(istream& infile){
 
 	 //if there are unprocessed commands in the cmds buffer, try to process them
 	 if(!cmds.empty() && state != STOPPING){
-		vector<cmd_t>::iterator v = cmds.begin();
-		while( v != cmds.end()) {
-		   cmd_t c = *v;
+		boost::circular_buffer<cmd_t>::iterator iter = cmds.begin();
+		while( iter != cmds.end()) {
+		   cmd_t c = *iter;
+                   iter++;
 		   if ( processCommand(c) ){
-			   v = cmds.erase(v);
+                       cmds.pop_front();
 		   }
 		   else{
 			   break;
@@ -375,6 +386,9 @@ int motion_loop(istream& infile){
    
    parse = gcParser();
    planner = new motion_planner(set);
+   cmds = boost::circular_buffer<cmd_t>(10);
+   conversion = 1.0; //default to mm
+   scale = 1;
    
 #ifndef HEADLESS
    //we will use the servodrv hardware api

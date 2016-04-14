@@ -5,8 +5,8 @@
  * Created on November 27, 2015, 9:38 AM
  */
 
-#include <vector>
 #include <map>
+#include "boost/circular_buffer.hpp"
 
 #ifndef GCPARSER_H
 #define	GCPARSER_H
@@ -29,7 +29,7 @@ typedef struct cmd_t{
 class gcParser {
 public:
     gcParser();
-    bool parseBlock(std::string block, std::vector<cmd_t> &cmds);
+    bool parseBlock(std::string block, boost::circular_buffer<cmd_t> &cmds);
     
     static const char paramLetters[NUM_LETTERS];
     static const char paramCmds[3];

@@ -7,10 +7,12 @@
 
 #include <cctype>
 #include <algorithm>
-#include <vector>
 #include <boost/regex.hpp>
 #include <map>
 #include <iterator> // for std::begin, std::end
+#include "boost/circular_buffer.hpp"
+
+#include <iostream>
 
 #include "gcParser.h"
 
@@ -89,62 +91,66 @@ gcParser::gcParser(){
     order['M'][60] = 22;
 }
 
-bool gcParser::parseBlock(std::string block, std::vector<cmd_t> &cmds){
+bool gcParser::parseBlock(std::string block, boost::circular_buffer<cmd_t> &cmds){
     
-    static const boost::regex re_fullCmd("("                                    //for parsing the full gcode command
-        "([GM]([0-9]{1,3})([ABCDEFHIJKLPQRUVWXYZ](\\+|\\-|\\.|[0-9])+)*)|"
-        "([ABCDEFHIJKLPQRSUVWXYZFT]((\\+|\\-|\\.|[0-9])+)*)+"
-        ")"),
-        re_cmdNumber("[0-9]{1,3}"),                                             //for parsing the command number
-        re_params("[ABCDEFHIJKLPQRSTUVWXYZF](\\+|\\-|\\.|[0-9])+");               //for parsing command parameters
-    
-    int i = strcspn (block.c_str(),";");                                   //remove comments
-    block = block.substr(0,i);
-    
-    block.erase(std::remove_if(block.begin(),block.end(), ::isspace),block.end()); //remove whitespace
-    
-    boost::sregex_token_iterator iter(block.begin(), block.end(), re_fullCmd, 0);
-    boost::sregex_token_iterator end;
-    
-    for( ; iter != end; ++iter ) {
-        cmd_t a;
-        a.letter = NO_LETTER;
-        a.number = strtof("", NULL);
-        
-        std::string s = *iter;
-        char letter = s.at(0); //get the command letter
-        
-        bool is_param = std::find(paramLetters, paramLetters + NUM_LETTERS, letter) != paramLetters + 23;
-        
-        if(!is_param){ //If this is a new command get the letter and number
-            if(letter == 'G' || letter == 'M'){
-                a.letter = letter;
-                boost::smatch result;
-                if (boost::regex_search(s, result, re_cmdNumber)) {
-                    std::string submatch(result[0]);
-                    a.number = strtof(submatch.c_str(), NULL);
+    if(!cmds.full()){
+        static const boost::regex re_fullCmd("("                                    //for parsing the full gcode command
+            "([GM]([0-9]{1,3})([ABCDEFHIJKLPQRUVWXYZ](\\+|\\-|\\.|[0-9])+)*)|"
+            "([ABCDEFHIJKLPQRSUVWXYZFT]((\\+|\\-|\\.|[0-9])+)*)+"
+            ")"),
+            re_cmdNumber("[0-9]{1,3}"),                                             //for parsing the command number
+            re_params("[ABCDEFHIJKLPQRSTUVWXYZF](\\+|\\-|\\.|[0-9])+");               //for parsing command parameters
+
+        int i = strcspn (block.c_str(),";");                                   //remove comments
+        block = block.substr(0,i);
+
+        block.erase(std::remove_if(block.begin(),block.end(), ::isspace),block.end()); //remove whitespace
+
+        boost::sregex_token_iterator iter(block.begin(), block.end(), re_fullCmd, 0);
+        boost::sregex_token_iterator end;
+
+        for( ; iter != end; ++iter ) {
+            cmd_t a;
+            a.letter = NO_LETTER;
+            a.number = strtof("", NULL);
+
+            std::string s = *iter;
+            char letter = s.at(0); //get the command letter
+
+            bool is_param = std::find(paramLetters, paramLetters + NUM_LETTERS, letter) != paramLetters + 23;
+
+            if(!is_param){ //If this is a new command get the letter and number
+                if(letter == 'G' || letter == 'M'){
+                    a.letter = letter;
+                    boost::smatch result;
+                    if (boost::regex_search(s, result, re_cmdNumber)) {
+                        std::string submatch(result[0]);
+                        a.number = strtof(submatch.c_str(), NULL);
+                    }
                 }
             }
+            boost::sregex_token_iterator paramIter(s.begin(), s.end(), re_params, 0);
+            boost::sregex_token_iterator paramIterEnd;
+            for( ; paramIter != paramIterEnd; ++paramIter ) {
+                std::string p = *paramIter;
+                char p_letter = p.at(0);
+                a.params[p_letter] = strtof(p.substr(1, std::string::npos).c_str(), NULL);
+            }
+            a.priority = order[a.letter][a.number];
+            cmds.push_back(a);
+            std::cout << a.params['X'] << ", " << a.params['Y'] << std::endl;
         }
-        boost::sregex_token_iterator paramIter(s.begin(), s.end(), re_params, 0);
-        boost::sregex_token_iterator paramIterEnd;
-        for( ; paramIter != paramIterEnd; ++paramIter ) {
-            std::string p = *paramIter;
-            char p_letter = p.at(0);
-            a.params[p_letter] = strtof(p.substr(1, std::string::npos).c_str(), NULL);
+
+        //std::sort(cmds.begin(), cmds.end()); //sort according to priority
+
+        if(!cmds.empty()){
+            return 1;
         }
-        a.priority = order[a.letter][a.number];
-        cmds.push_back(a);
+        else{
+            return 0;
+        }
     }
-    
-    std::sort(cmds.begin(), cmds.end()); //sort according to priority
-    
-    if(!cmds.empty()){
-        return 1;
-    }
-    else{
-        return 0;
-    }
+    return 0;
 }
 
 
