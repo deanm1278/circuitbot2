@@ -17,13 +17,13 @@
 #define LOG_PROFILE
 
 /** log the machine path to path.csv **/
-#define LOG_PATH
+//#define LOG_PATH
 
 /** log the encoder/step values of the motors on each axis **/
-#define LOG_AXIS
+//#define LOG_AXIS
 
 /** log the speed (or step value per T) of each motor. This is the value that will be sent to the firmware **/
-#define LOG_SPEED
+//#define LOG_SPEED
 
 #if defined(LOG_PROFILE) | defined(LOG_AXIS) || defined(LOG_PATH) || defined(LOG_SPEED)
 #include <fstream>
@@ -292,25 +292,41 @@ void motion_planner::recalculate(void){
 	while(iter != cb.end()){
 		step_t step = *iter;
 
-                if(std::distance(iter, cb.end()) > 1){
-                    float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
+		if(std::distance(iter, cb.end()) > 1){
+			float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
 
-                    //determine end speed at this node
-                    step.ve = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
-                }
-                else{
-                    //the end speed at the last node will always be 0
-                    step.ve = 0.0;
-                }
+			//determine end speed at this node
+			step.ve = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
+		}
+		else{
+			//the end speed at the last node will always be 0
+			step.ve = 0.0;
+		}
 		//check if speed is reachable given the length of the line
 		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
 		float max_reachable = this->_pro_vd(step.vs, step.L);
+		//TODO: this is broken, fix
 		step.ve = std::min(step.ve, max_reachable);
 		step.next->vs = step.ve;
                 
 		*iter = step;
 		iter++;
 	}
+	//now do it backwards to make sure alll speeds are reachable
+	boost::circular_buffer<step_t>::reverse_iterator riter = cb.rbegin();
+	while(riter != cb.rend()){
+		step_t step = *riter;
+
+		//check if speed is reachable given the length of the line
+		float max_reachable = this->_pro_vd(step.ve, step.L);
+		//TODO: this is broken, fix
+		step.vs = std::min(step.vs, max_reachable);
+		step.previous->ve = step.vs;
+
+		*riter = step;
+		riter++;
+	}
+
 
 	//now calculate the acc/dec profile at each node
 	iter = cb.begin();
@@ -319,9 +335,13 @@ void motion_planner::recalculate(void){
 
 		if(this->_pro_vd(step.vs, step.L) < set.Vm){
 			_pro_vv(step.vs, step.ve, step.ad_profile);
+			//if(step.ad_profile.size() == 0)
+				//TODO: throw an error, this should never happen
 		}
 		else{
 			step.vm = _pro_ad(step.vs, step.ve, step.L, step.ad_profile);
+			//if(step.ad_profile.size() == 0)
+				//TODO: throw error, this should never happen
 		}
 
 		*iter = step;
@@ -350,7 +370,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
             if(this->empty()){
                 return num;
             }
-            
+
             interp.step = cb.front();
             interp.step.previous = &head;
 
@@ -363,10 +383,14 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                     interp.dm = (interp.step.vs + interp.step.ve) / 2 * (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2));
                     interp.tm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1) + interp.step.ad_profile.at(2)) * interp.step.L / interp.dm;
             }
-            else{
+            else if(interp.step.ad_profile.size() == 7){
                     interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.step.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.step.ve + interp.step.vm)/2;
                     float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
                     interp.tm = tmp_tm * interp.step.L / interp.dm;
+            }
+            else{
+            	//we should never get here
+            	std::cout << "whaaaat" << std::endl;
             }
 
             //get all direction cosines

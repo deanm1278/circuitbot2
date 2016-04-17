@@ -12,7 +12,7 @@
 #include <iterator> // for std::begin, std::end
 #include "boost/circular_buffer.hpp"
 
-#include <iostream>
+//#include <iostream>
 
 #include "gcParser.h"
 
@@ -138,7 +138,6 @@ bool gcParser::parseBlock(std::string block, boost::circular_buffer<cmd_t> &cmds
             }
             a.priority = order[a.letter][a.number];
             cmds.push_back(a);
-            std::cout << a.params['X'] << ", " << a.params['Y'] << std::endl;
         }
 
         //std::sort(cmds.begin(), cmds.end()); //sort according to priority

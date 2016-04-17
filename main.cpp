@@ -311,7 +311,7 @@ int motion_loop(istream& infile){
 				//write to the hardware
 				servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
 #endif
-				//cout << "wrote " << num << endl;
+				cout << "wrote " << num << endl;
 			}
 		}
 	 }
