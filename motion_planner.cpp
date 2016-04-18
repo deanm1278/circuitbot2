@@ -104,7 +104,7 @@ float motion_planner::_pro_vd(float vs, float dm){
             t[0] = boost::math::tools::newton_raphson_iterate(vd2_functor<float>(set.Sm, vs, dm), guess, min, max, digits);
         }
         //return the end speed
-        return vs + 2*set.Sm*std::pow(t[0], 3) + set.Sm*t[0]*t[1]*t[2] + set.Sm*t[0]*std::pow(t[1], 2) + 3*set.Sm*std::pow(t[0], 2)*t[1] + set.Sm*std::pow(t[0], 2)*t[2];
+        return 2*set.Sm*std::pow(t[0], 3) + set.Sm*t[0]*t[1]*t[2] + set.Sm*t[0]*std::pow(t[1], 2) + 3*set.Sm*std::pow(t[0], 2)*t[1] + set.Sm*std::pow(t[0], 2)*t[2];
     }
     else{
         //todo implement this
@@ -288,10 +288,12 @@ float motion_planner::_v_bar(float t, std::vector<float> &ad, float vs, float vm
 void motion_planner::recalculate(void){
 	//recalculate the entire buffer of data
 	boost::circular_buffer<step_t>::iterator iter = cb.begin();
-
+        
 	while(iter != cb.end()){
 		step_t step = *iter;
-
+                
+                step.vs = step.previous->ve;
+                
 		if(std::distance(iter, cb.end()) > 1){
 			float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
 
@@ -304,36 +306,25 @@ void motion_planner::recalculate(void){
 		}
 		//check if speed is reachable given the length of the line
 		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
-		float max_reachable = this->_pro_vd(step.vs, step.L);
-		//TODO: this is broken, fix
-		step.ve = std::min(step.ve, max_reachable);
-		step.next->vs = step.ve;
+		float max_delta = this->_pro_vd(step.vs, step.L);
+                
+                if(step.ve < step.vs){
+                    step.ve = std::max(step.vs - max_delta, step.ve);
+                }
+                else if(step.ve > step.vs){
+                    step.ve = std::min(step.vs + max_delta, step.ve);
+                }
                 
 		*iter = step;
 		iter++;
 	}
-	//now do it backwards to make sure alll speeds are reachable
-	boost::circular_buffer<step_t>::reverse_iterator riter = cb.rbegin();
-	while(riter != cb.rend()){
-		step_t step = *riter;
-
-		//check if speed is reachable given the length of the line
-		float max_reachable = this->_pro_vd(step.ve, step.L);
-		//TODO: this is broken, fix
-		step.vs = std::min(step.vs, max_reachable);
-		step.previous->ve = step.vs;
-
-		*riter = step;
-		riter++;
-	}
-
-
+        
 	//now calculate the acc/dec profile at each node
 	iter = cb.begin();
 	while(iter != cb.end()){
 		step_t step = *iter;
 
-		if(this->_pro_vd(step.vs, step.L) < set.Vm){
+		if(step.vs + this->_pro_vd(step.vs, step.L) < set.Vm){
 			_pro_vv(step.vs, step.ve, step.ad_profile);
 			//if(step.ad_profile.size() == 0)
 				//TODO: throw an error, this should never happen
@@ -371,8 +362,12 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                 return num;
             }
 
+            boost::circular_buffer<step_t>::iterator iter = cb.begin();
+            step_t s = *iter;
+            s.previous = &head;
+            *iter = s;
+            
             interp.step = cb.front();
-            interp.step.previous = &head;
 
             //reset time and distance
             interp.t_current = 0 + set.T;
@@ -387,10 +382,6 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
                     interp.dm = (4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2)) * (interp.step.vs + interp.step.vm) / 2 + interp.step.vm * interp.step.ad_profile.at(3) + (4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6)) * (interp.step.ve + interp.step.vm)/2;
                     float tmp_tm = 4*interp.step.ad_profile.at(0) + 2*interp.step.ad_profile.at(1)+ interp.step.ad_profile.at(2) + interp.step.ad_profile.at(3) + 4*interp.step.ad_profile.at(4) + 2*interp.step.ad_profile.at(5) * interp.step.ad_profile.at(6);
                     interp.tm = tmp_tm * interp.step.L / interp.dm;
-            }
-            else{
-            	//we should never get here
-            	std::cout << "whaaaat" << std::endl;
             }
 
             //get all direction cosines

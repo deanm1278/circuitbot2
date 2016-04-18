@@ -28,7 +28,7 @@ typedef struct step_t{
     float vs = 0.0;	//start speed at this node
     float ve = 0.0;	//end speed at this node
     float L = 0.0;	//length of line
-    std::vector<float> ad_profile;	//acceleration profile
+    std::vector<float> ad_profile;	//acceleration profile;
     step_t *previous;   //pointer to previous node
     step_t *next;       //pointer to next node
 } step_t;
