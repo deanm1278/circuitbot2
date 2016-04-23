@@ -13,6 +13,8 @@
 #ifndef VC0706_H_
 #define VC0706_H_
 
+#define VC0706_SET_INTERFACE			0x07
+#define	VC0706_INTERFACE_SPI			0x03
 #define VC0706_RESET                    0x26
 #define VC0706_GEN_VERSION              0x11
 #define VC0706_SET_PORT                 0x24
@@ -62,7 +64,7 @@ public:
 	bool TVon();
 	bool TVoff();
 	bool takePicture();
-	bool readPicture(uint8_t *buffer, uint16_t len);
+	bool readPicture(uint8_t *buffer, uint8_t len);
 	bool resumeVideo();
 	uint32_t frameLength();
 	char *getVersion();

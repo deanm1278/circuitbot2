@@ -309,10 +309,10 @@ uint8_t VC0706::available(void) {
 }
 
 //TODO: This obviously wont work.
-bool VC0706::readPicture(uint8_t *buffer, uint16_t len) {
-  uint8_t args[] = {0x0C, 0x0, 0x0A, 
+bool VC0706::readPicture(uint8_t *buffer, uint8_t len) {
+  uint8_t args[] = {0x0C, 0x0, 0x0F,
                     0, 0, static_cast<uint8_t>(frameptr >> 8), static_cast<uint8_t>(frameptr & 0xFF), 
-                    0, 0, 0, static_cast<uint8_t>(len),
+                    0, 0, 0, len,
                     CAMERADELAY >> 8, CAMERADELAY & 0xFF};
 
   if (! runCommand(VC0706_READ_FBUF, args, sizeof(args), 5, false))

@@ -499,7 +499,6 @@ int motion_loop(istream& infile){
                 cout<<"Error: "<<e.what()<<endl;
                 return 1;
             }
-            /* TODO: uart is waaay slow lets throw some spi on this
             usleep(999999);
 
             if (! camera->takePicture())
@@ -507,10 +506,10 @@ int motion_loop(istream& infile){
               else
                 cout << "picture taken!" << endl;
 
-            uint16_t jpglen = camera->frameLength();
-            uint8_t buffer[jpglen];
-            camera->readPicture(buffer, jpglen);
+            uint8_t buffer[200];
+            camera->readPicture(buffer, 100);
 
+            /*
             ofstream jpg ("output.jpg",std::ofstream::binary);
             jpg.write((const char *)buffer, jpglen);
             jpg.close();
