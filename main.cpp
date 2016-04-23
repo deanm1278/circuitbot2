@@ -62,8 +62,6 @@ int drv; //File descriptor for servodrv
 VC0706 *camera; //camera for calibration
 string camera_port;
 
-calibrate *calibrate; //image processing class for claibration
-
 float current_position[NUM_AXIS];
 float destination[NUM_AXIS];
 float feedrate;
@@ -473,11 +471,14 @@ int motion_loop(istream& infile){
            break;
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;
-
+           
+           calibrate cal = calibrate(); //image processing class for claibration
+           cal.matchTemplate();
    /* Auto-home the machine using the camera and image processing modules.
     * control loop will be:
     * Camera image --> image processing module --> gcode --> planner --> motion hardware
     */
+           /*
             try {
                 //open the camera hardware
                 camera = new VC0706(camera_port);
