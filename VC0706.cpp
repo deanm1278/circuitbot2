@@ -8,6 +8,7 @@
  *      https://github.com/adafruit/Adafruit-VC0706-Serial-Camera-Library/blob/master/VC0706.h
  */
 
+#include <stdio.h>
 #include <boost/asio.hpp>
 #include <boost/optional.hpp>
 #include "VC0706.h"
@@ -308,22 +309,21 @@ uint8_t VC0706::available(void) {
   return bufferLen;
 }
 
-//TODO: This obviously wont work.
-bool VC0706::readPicture(uint8_t *buffer, uint8_t len) {
+bool VC0706::readPicture(uint32_t n) {
   uint8_t args[] = {0x0C, 0x0, 0x0F,
-                    0, 0, static_cast<uint8_t>(frameptr >> 8), static_cast<uint8_t>(frameptr & 0xFF), 
-                    0, 0, 0, len,
+                    0, 0, static_cast<uint8_t>(frameptr >> 8), static_cast<uint8_t>(frameptr & 0xFF),
+					static_cast<uint8_t>((n & 0xff000000UL) >> 24),
+					static_cast<uint8_t>((n & 0x00ff0000UL) >> 16),
+					static_cast<uint8_t>((n & 0x0000ff00UL) >>  8),
+					static_cast<uint8_t>(n & 0x000000ffUL)      ,
                     CAMERADELAY >> 8, CAMERADELAY & 0xFF};
 
-  if (! runCommand(VC0706_READ_FBUF, args, sizeof(args), 5, false))
-    return 0;
+  sendCommand(VC0706_READ_FBUF, args, sizeof(args));
+  return true;
+  //if (! runCommand(VC0706_READ_FBUF, args, sizeof(args), 5, false))
+  //  return false;
+  //else return true;
 
-  if (readResponse(len, 200, buffer) == 0)
-      return 0;
-
-  frameptr += len;
-
-  return 0;
 }
 
 // ********** LOW LEVEL COMMANDS ********** //
@@ -350,14 +350,12 @@ bool VC0706::runCommand(uint8_t cmd, uint8_t *args, uint8_t argn,
 }
 
 void VC0706::sendCommand(uint8_t cmd, uint8_t args[] = 0, uint8_t argn = 0) {
-	//for some reason I don't understand we need to flush this buffer
-	std::flush( std::cout );
 
 	char toWrite[3 + argn];
 	toWrite[0] = VC0706_RECEIVE_SIGN;
 	toWrite[1] = serialNum;
 	toWrite[2] = cmd;
-	memcpy(args, &toWrite[3], argn * sizeof(uint8_t));
+	memcpy(&toWrite[3], args, argn);
 
 	boost::asio::write(serial, boost::asio::buffer(toWrite, sizeof(uint8_t) * (3 + argn)));
 }

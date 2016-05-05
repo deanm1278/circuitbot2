@@ -1,9 +1,8 @@
 [SETTINGS]
-OFFSET_X                = 60.0
-OFFSET_Y                = -100.0
+OFFSET_X                = 60
+OFFSET_Y                = -100
 AXIS_SCALE_X            = 1.0
 AXIS_SCALE_Y            = 1.0
-SEGMENTS_PER_SECOND     = 50.0
 FEED_MULTIPLY           = 1.0
 
 [MACHINE]
@@ -17,3 +16,5 @@ INTERPOLATION_PERIOD    = .001
 VELOCITY_MAX            = 40.0
 IMPULSE_MAX             = 5.0
 CAMERA_PORT				= /dev/ttyO4
+TICKS_PER_RADIAN		= 65189.8647
+STEPS_PER_MM			= 32251.9685039

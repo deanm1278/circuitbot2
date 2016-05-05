@@ -14,7 +14,7 @@
 #include <boost/math/tools/roots.hpp>
 
 /** log the speed profile to speed_profile.csv **/
-#define LOG_PROFILE
+//#define LOG_PROFILE
 
 /** log the machine path to path.csv **/
 //#define LOG_PATH
@@ -257,9 +257,9 @@ int motion_planner::calculate_delta(float cartesian[NUM_AXIS], long int delta[NU
 	SCARA_theta = ( atan2(SCARA_pos[X_AXIS],SCARA_pos[Y_AXIS])-atan2(SCARA_K1, SCARA_K2) ) * -1;
 	SCARA_psi   =   atan2(SCARA_S2,SCARA_C2);
 
-	delta[X_AXIS] = SCARA_theta * RAD_TO_TICK; // Theta is support arm angle (shoulder)
-	delta[Y_AXIS] = SCARA_psi * RAD_TO_TICK;   // - Psi sub arm angle (elbow)
-	delta[Z_AXIS] = cartesian[Z_AXIS] * STEPS_PER_MM; //convert to steps
+	delta[X_AXIS] = SCARA_theta * set.ticks_per_radian * TO_FIXED; // Theta is support arm angle (shoulder)
+	delta[Y_AXIS] = SCARA_psi * set.ticks_per_radian * TO_FIXED;   // - Psi sub arm angle (elbow)
+	delta[Z_AXIS] = cartesian[Z_AXIS] * set.steps_per_mm; //convert to steps
 
     return 0;
 }

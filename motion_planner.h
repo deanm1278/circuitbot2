@@ -19,7 +19,7 @@
 
 #define MIN_BUF_LEN 10
 #define RAD_TO_TICK 65189.8647
-#define TO_FIXED 10000
+#define TO_FIXED 1000
 
 typedef struct step_t{
     float point[NUM_AXIS] = {0.0, 0.0, 0.0};	//xyz point at this node
@@ -45,6 +45,12 @@ typedef struct settings_t{
     float SCARA_offset_x;
     float SCARA_offset_y;
     float axis_scaling[NUM_AXIS];
+    /*
+     * 360 degrees / 1.8 degrees per step = 200 steps per revolution
+     * 200 steps / 1.5875 mm per rev (lead screw) = 125.984252 steps per mm
+     */
+    float steps_per_mm;
+    float ticks_per_radian;
 
     float Sm;
     float Jm;

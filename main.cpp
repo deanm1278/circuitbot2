@@ -25,7 +25,7 @@
 #include "VC0706.h"
 #include "calibrate.h"
 
-#define HEADLESS
+//#define HEADLESS
 
 #ifndef HEADLESS
 #include "libservodrv.h"
@@ -86,6 +86,8 @@ void readConfig(void){ //use as template for our config file
   set.T                             = (float)cf.Value("MACHINE", "INTERPOLATION_PERIOD");
   set.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
   set.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
+  set.steps_per_mm					= (float)cf.Value("MACHINE", "STEPS_PER_MM");
+  set.ticks_per_radian				= (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
   
   camera_port                		= (string)cf.Value("MACHINE", "CAMERA_PORT");
 }
@@ -309,7 +311,7 @@ int motion_loop(istream& infile){
 				//write to the hardware
 				servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
 #endif
-				//cout << "wrote " << num << endl;
+				cout << "wrote " << num << endl;
 			}
 		}
 	 }
@@ -471,14 +473,12 @@ int motion_loop(istream& infile){
            break;
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;
-           
-           calibrate cal = calibrate(); //image processing class for claibration
-           cal.matchTemplate();
+
    /* Auto-home the machine using the camera and image processing modules.
     * control loop will be:
     * Camera image --> image processing module --> gcode --> planner --> motion hardware
     */
-           /*
+
             try {
                 //open the camera hardware
                 camera = new VC0706(camera_port);
@@ -507,8 +507,14 @@ int motion_loop(istream& infile){
               else
                 cout << "picture taken!" << endl;
 
-            uint8_t buffer[200];
-            camera->readPicture(buffer, 100);
+            uint32_t jpglen = camera->frameLength();
+
+            cout << "picture is " << jpglen << " bytes" << endl;
+
+            if(!camera->readPicture(jpglen))
+            	cout << "read failed" << endl;
+            else
+            	cout << "picture successfully read!" << endl;
 
             /*
             ofstream jpg ("output.jpg",std::ofstream::binary);

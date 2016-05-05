@@ -64,7 +64,7 @@ public:
 	bool TVon();
 	bool TVoff();
 	bool takePicture();
-	bool readPicture(uint8_t *buffer, uint8_t len);
+	bool readPicture(uint32_t n);
 	bool resumeVideo();
 	uint32_t frameLength();
 	char *getVersion();

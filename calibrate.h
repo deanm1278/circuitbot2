@@ -11,15 +11,12 @@
 #ifndef CALIBRATE_H_
 #define CALIBRATE_H_
 
-#include "opencv2/imgproc/imgproc.hpp"
 
 class calibrate {
 public:
     calibrate();
-    int matchTemplate();
     virtual ~calibrate();
 private:
-    cv::Mat img; cv::Mat templ; cv::Mat result;
 };
 
 #endif /* CALIBRATE_H_ */
