@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <termios.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -22,10 +23,9 @@
 #include "ConfigFile.h"
 #include "gcParser.h"
 #include "motion_planner.h"
-#include "VC0706.h"
 #include "calibrate.h"
 
-//#define HEADLESS
+#define HEADLESS
 
 #ifndef HEADLESS
 #include "libservodrv.h"
@@ -59,7 +59,6 @@ motion_planner *planner;
 
 int drv; //File descriptor for servodrv
 
-VC0706 *camera; //camera for calibration
 string camera_port;
 
 float current_position[NUM_AXIS];
@@ -86,10 +85,10 @@ void readConfig(void){ //use as template for our config file
   set.T                             = (float)cf.Value("MACHINE", "INTERPOLATION_PERIOD");
   set.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
   set.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
-  set.steps_per_mm					= (float)cf.Value("MACHINE", "STEPS_PER_MM");
-  set.ticks_per_radian				= (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
+  set.steps_per_mm                  = (float)cf.Value("MACHINE", "STEPS_PER_MM");
+  set.ticks_per_radian              = (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
   
-  camera_port                		= (string)cf.Value("MACHINE", "CAMERA_PORT");
+  camera_port                       = (string)cf.Value("MACHINE", "CAMERA_PORT");
 }
 
 int parseInput(int argc, char**argv){
@@ -478,49 +477,6 @@ int motion_loop(istream& infile){
     * control loop will be:
     * Camera image --> image processing module --> gcode --> planner --> motion hardware
     */
-
-            try {
-                //open the camera hardware
-                camera = new VC0706(camera_port);
-                if(!camera->reset()){
-                	cout << "camera reset failed!" << endl;
-                	return 1;
-                }
-                char *version = camera->getVersion();
-                if(version){
-                	cout << version << endl;
-                }
-                else{
-                	cout << "failed to get camera version!" << endl;
-                }
-                camera->setImageSize(VC0706_640x480);
-
-            } catch(boost::system::system_error& e)
-            {
-                cout<<"Error: "<<e.what()<<endl;
-                return 1;
-            }
-            usleep(999999);
-
-            if (! camera->takePicture())
-                cout << "failed to take pic" << endl;
-              else
-                cout << "picture taken!" << endl;
-
-            uint32_t jpglen = camera->frameLength();
-
-            cout << "picture is " << jpglen << " bytes" << endl;
-
-            if(!camera->readPicture(jpglen))
-            	cout << "read failed" << endl;
-            else
-            	cout << "picture successfully read!" << endl;
-
-            /*
-            ofstream jpg ("output.jpg",std::ofstream::binary);
-            jpg.write((const char *)buffer, jpglen);
-            jpg.close();
-            */
 
            break;
    }
