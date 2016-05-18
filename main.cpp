@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <termios.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -146,7 +145,7 @@ int parseInput(int argc, char**argv){
       
 }
 
-bool processCommand(cmd_t c){
+int processCommand(cmd_t c){
     //Implemented Codes
 //-------------------
 // G0  -> G1
@@ -210,6 +209,8 @@ bool processCommand(cmd_t c){
                     break;
                 default:
                     //unimplemented function. do nothing
+                    cout << "error: unrecognizd command" << endl;
+                    return -1;
                     break;
             }
             break;
@@ -227,6 +228,8 @@ bool processCommand(cmd_t c){
                     break;
                 default:
                     //unimplemented function. do nothing
+                    cout << "error: unrecognizd command" << endl;
+                    return -1;
                     break;
             }
             break;
@@ -253,27 +256,18 @@ bool processCommand(cmd_t c){
                     }
                     else { return 0; } //the plan buffer was full and we could not process the command
             }
+            else{
+                cout << "error: unrecognizd command" << endl;
+                return -1;
+            }
             break;
         default:
             //should never get here
+            cout << "error: unrecognizd command" << endl;
+            return -1;
             break;
     }
     return 1;
-}
-
-//non blocking key read
-int getch()
-{
-  static struct termios oldt, newt;
-  tcgetattr( STDIN_FILENO, &oldt);           // save old settings
-  newt = oldt;
-  newt.c_lflag &= ~(ICANON);                 // disable buffering
-  tcsetattr( STDIN_FILENO, TCSANOW, &newt);  // apply new settings
-
-  int c = getchar();  // read character (non-blocking)
-
-  tcsetattr( STDIN_FILENO, TCSANOW, &oldt);  // restore old settings
-  return c;
 }
 
 /*
@@ -315,24 +309,25 @@ int motion_loop(istream& infile){
 		}
 	 }
 
-        if(mode == RUN){
-            //try to read in a new set of commands
-            if( !infile.eof() && cmds.empty() ){
-                   string line;
-                   while( 1 ){ //read till we get a valid block or hit EOF
-                           if( !getline(infile, line) ){
-                                   break;
-                           }
-                           else if( parse.parseBlock(line, cmds) ){
-                                   break;
-                           }
-                   }
-            }
-           //we are at end of file. set min buf len (lookahead size) to 1 to flush out all remaining items
-           if(infile.eof()){
-               planner->min_buf_len = 1;
-           }
+        //try to read in a new set of commands
+        if( !infile.eof() && cmds.empty() ){
+               string line;
+               while( 1 ){ //read till we get a valid block or hit EOF
+                       if( !getline(infile, line) ){
+                               break;
+                       }
+                       else if( parse.parseBlock(line, cmds) > -1){
+                               break;
+                       }
+                       else{
+                           return 1;
+                       }
+               }
         }
+       //we are at end of file. set min buf len (lookahead size) to 1 to flush out all remaining items
+       if(infile.eof()){
+           planner->min_buf_len = 1;
+       }
 
 	 //if there are unprocessed commands in the cmds buffer, try to process them
 	 if(!cmds.empty() && state != STOPPING){
@@ -414,61 +409,19 @@ int motion_loop(istream& infile){
                return 1;
            }
            break;
-       case JOG:
-       {
+       case JOG:{
            planner->min_buf_len = 1;
+           string input;
            cout << "we are in jog mode!" << endl;
-           istringstream dummy; //fake infile. We will just feed the cmd buffer manually
            
-           float zPos = 0.0;
-           float xPos = 0.0;
-           float yPos = 0.0;
-
-           float jogstep = 5;
-
            while(1){
-        	   int ch = getch();   // call your non-blocking input function
-        	   if(ch){
-                       bool found = true;
-                       cmd_t c;
-                       c.letter = 'G';
-                       c.number = 0;
-                        switch(ch){
-                        case 53: //page up, z axis up
-                                zPos += jogstep;
-                                c.params['Z'] = zPos;
-                                break;
-                        case 54: //page down, z axis down
-                                zPos -= jogstep;
-                                c.params['Z'] = zPos;
-                                break;
-                        case 65: //up arrow, y axis up
-                                yPos += jogstep;
-                                c.params['Y'] = yPos;
-                                break;
-                        case 66: //down arrow, y axis down
-                                yPos -= jogstep;
-                                c.params['Y'] = yPos;
-                                break;
-                        case 67: //right arrow, x axis up
-                                xPos += jogstep;
-                                c.params['X'] = xPos;
-                                break;
-                        case 68: //left arrow, x axis down
-                                xPos -= jogstep;
-                                c.params['X'] = xPos;
-                                break;
-                        default:
-                            found = false;
-                                break;
-                        }
-                        if(found){
-                            cmds.push_back(c);
-                        }
-        	   }
-        	   motion_loop(dummy);
-                }
-            }
+                cout << "(circuitbot >) ";
+                getline(cin, input);
+                istringstream is(input);
+                while(!motion_loop(is));
+                cout << endl;
+           }
+       }
            break;
        case CALIBRATE:
            cout << "we are in calibrate mode" << endl;

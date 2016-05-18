@@ -14,7 +14,7 @@
 #include <boost/math/tools/roots.hpp>
 
 /** log the speed profile to speed_profile.csv **/
-//#define LOG_PROFILE
+#define LOG_PROFILE
 
 /** log the machine path to path.csv **/
 //#define LOG_PATH
