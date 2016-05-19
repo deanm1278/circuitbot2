@@ -35,16 +35,11 @@
 
 typedef enum {READY, G1, STOPPING, G4, M1, JOGGING} state_T;
 typedef enum {STOP_M1, STOP_G4, STOP_EOF} stop_T;
-typedef enum {UNSET, JOG, CALIBRATE, RUN} cbot_run_mode;
 
 using namespace std;
 
-string sourceFile; //the gcode source file
-
 state_T state; //the current state of the machine
 stop_T stop; //stores impending stop states
-
-cbot_run_mode mode; //machine mode
 
 float conversion;
 float scale;
@@ -88,61 +83,6 @@ void readConfig(void){ //use as template for our config file
   set.ticks_per_radian              = (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
   
   camera_port                       = (string)cf.Value("MACHINE", "CAMERA_PORT");
-}
-
-int parseInput(int argc, char**argv){
-    //get options
-   int ix;
-   int c;
-
-   opterr = 0;
-
-   while ((c = getopt (argc, argv, "jcr")) != -1)
-     switch (c)
-       {
-       case 'j': //jog mode
-           if(!mode)
-                mode = JOG;
-           else{
-               fprintf(stderr, "invalid arguments specified\n");
-               return 1;
-           }
-         break;
-       case 'c': //calibrate mode
-           if(!mode)
-                mode = CALIBRATE;
-           else{
-               fprintf(stderr, "invalid arguments specified\n");
-               return 1;
-           }
-         break;
-       case 'r': //run mode
-           if(!mode)
-                mode = RUN;
-           else{
-               fprintf(stderr, "invalid arguments specified\n");
-               return 1;
-           }
-        break;
-       case '?':
-         if (isprint (optopt))
-           fprintf (stderr, "Unknown option `-%c'.\n", optopt);
-         else
-           fprintf (stderr,
-                    "Unknown option character `\\x%x'.\n",
-                    optopt);
-         return 1;
-       default:
-         abort ();
-       }
-   
-   ix = optind;
-   if(argv[ix] != NULL){ //argv ends with null
-    sourceFile = string(argv[ix]);
-   }
-   
-   return 0;
-      
 }
 
 int processCommand(cmd_t c){
@@ -371,12 +311,34 @@ int motion_loop(istream& infile){
 	 else return 0;
 }
 
+//send a single gcode command
+int send(string input){
+    istringstream is(input);
+    while(!motion_loop(is));
+    return 0;
+}
+
+//run a gcode file
+int run(string sourceFile){
+    ifstream infile(sourceFile.c_str());
+    while (!motion_loop(infile));
+    return 0;
+}
+
+vector<string> &parse_input(const string &s, char delim, vector<string> &elems) {
+    stringstream ss(s);
+    string item;
+    getline(ss, item, delim);
+    elems.push_back(item);
+    
+    getline(ss, item);
+    elems.push_back(item);
+    return elems;
+}
+
  int main (int argc, char **argv)
  {       
    readConfig(); //read config file
-   
-   if(parseInput(argc, argv))
-       return 1;
    
    parse = gcParser();
    planner = new motion_planner(set);
@@ -396,42 +358,41 @@ int motion_loop(istream& infile){
    }
 #endif
    
-   switch(mode){  
-       case RUN:
-           //execute a gcode file
-           if(sourceFile != ""){
-            //open the source file and begin reading lines
-            ifstream infile(sourceFile.c_str());
-             while (!motion_loop(infile));
-           }
-           else{
-               cout << "no source file specified!" << endl;
-               return 1;
-           }
-           break;
-       case JOG:{
-           planner->min_buf_len = 1;
-           string input;
-           cout << "we are in jog mode!" << endl;
-           
-           while(1){
-                cout << "(circuitbot >) ";
-                getline(cin, input);
-                istringstream is(input);
-                while(!motion_loop(is));
-                cout << endl;
-           }
-       }
-           break;
-       case CALIBRATE:
-           cout << "we are in calibrate mode" << endl;
+   bool running = true;
+   string input;
+   while(running){
+       cout << "circuitbot> ";
+       getline(cin, input);
+       
+       //split off the command and then do the relevant thing
+        vector<string> parts;
+        parse_input(input, ' ', parts);
 
-   /* Auto-home the machine using the camera and image processing modules.
-    * control loop will be:
-    * Camera image --> image processing module --> gcode --> planner --> motion hardware
-    */
+        string c = parts.at(0);
 
-           break;
+        if (c == "send" || c == "s") {
+            send(parts.at(1));
+        }
+        else if (c == "run") {
+            run(parts.at(1));
+        }
+        else if (c == "help") {
+            cout << "Circuitbot CNC program:" << endl;
+            cout << "Copyright (C) 2016 Dean Miller" << endl;
+            cout << "GNU GPL license. This is free software. Do what you want, but you may not sell it in any form." << endl;
+            cout << "There is NO WARRANTY, to the extent permitted by law" << endl << endl;
+            cout << "Commands: " << endl;
+            cout << "send [gcode line] - sends a single line of gcode" << endl;
+            cout << "run [filename] - run a gcode program from a file" << endl;
+            cout << "set [field] [value] - set the specified setting to the specified value" << endl;
+            cout << "quit - quit the program" << endl;
+        } else if (c == "quit" || c == "q") {
+            running = false;
+        } else {
+            cout << "unrecognized command. Type 'help' for available commands" << endl;
+        }
+       
+       cout << endl;
    }
 #ifndef HEADLESS
     //close the driver
