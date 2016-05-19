@@ -17,7 +17,7 @@
 #define LOG_PROFILE
 
 /** log the machine path to path.csv **/
-//#define LOG_PATH
+#define LOG_PATH
 
 /** log the encoder/step values of the motors on each axis **/
 //#define LOG_AXIS
@@ -301,18 +301,26 @@ void motion_planner::recalculate(void){
 			step.ve = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
 		}
 		else{
-			//the end speed at the last node will always be 0
-			step.ve = 0.0;
+                    //the end speed at the last node will always be 0
+                    step.ve = 0.0;
 		}
 		//check if speed is reachable given the length of the line
 		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
 		float max_delta = this->_pro_vd(step.vs, step.L);
                 
-                if(step.ve < step.vs){
-                    step.ve = std::max(step.vs - max_delta, step.ve);
+                if(std::distance(iter, cb.end()) > 1){
+                    if(step.ve < step.vs){
+                        step.ve = std::max(step.vs - max_delta, step.ve);
+                    }
+                    else if(step.ve > step.vs){
+                        step.ve = std::min(step.vs + max_delta, step.ve);
+                    }
                 }
-                else if(step.ve > step.vs){
-                    step.ve = std::min(step.vs + max_delta, step.ve);
+                else{
+                    //SPECIAL CASE: if this is the only item in the buffer and max speed is not reachable we need to set end speed to the max reachable speed
+                    if(step.vs + max_delta < set.Vm){
+                        step.ve = step.vs + max_delta;
+                    }
                 }
                 
 		*iter = step;
@@ -356,11 +364,18 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
             if(interp.t_current > interp.tm){
                 head = cb.front();
                 cb.pop_front();
-            }
+            }            
             //if we have run out of items in the buffer, return
             if(this->empty()){
+                interp.t_current = 0;
+                interp.tm = 0;
+                head.ve = 0; //the machine has stopped
                 return num;
             }
+            
+            //reset time and distance
+            interp.t_current = 0 + set.T;
+            interp.dist = 0;
 
             boost::circular_buffer<step_t>::iterator iter = cb.begin();
             step_t s = *iter;
@@ -368,10 +383,7 @@ uint32_t motion_planner::interpolate(uint32_t max_items, uint16_t *buf){
             *iter = s;
             
             interp.step = cb.front();
-
-            //reset time and distance
-            interp.t_current = 0 + set.T;
-            interp.dist = 0;
+            
             //set the total time to complete the profile based on whether we have 3 or 7 periods
             if(interp.step.ad_profile.size() == 3){
                     //equation 9
