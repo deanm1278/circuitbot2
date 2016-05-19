@@ -385,6 +385,7 @@ vector<string> &parse_input(const string &s, char delim, vector<string> &elems) 
             cout << "send [gcode line] - sends a single line of gcode" << endl;
             cout << "run [filename] - run a gcode program from a file" << endl;
             cout << "set [field] [value] - set the specified setting to the specified value" << endl;
+            cout << "calibrate - calibrate the machine. Camera must be positioned over the calibration target." << endl;
             cout << "quit - quit the program" << endl;
         } else if (c == "quit" || c == "q") {
             running = false;
