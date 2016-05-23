@@ -45,15 +45,19 @@ float conversion;
 float scale;
 
 boost::circular_buffer<cmd_t> cmds; //stores gcode commands the parser gives us
-settings_t set; //stores machine settings from the config file
+settings_t settings; //stores machine settings from the config file
 
 gcParser parse; //gcode parser
 
 motion_planner *planner;
 
+calibrate *cal;
+
 int drv; //File descriptor for servodrv
 
-string camera_port;
+int camera;
+int board_height;
+int board_width;
 
 float current_position[NUM_AXIS];
 float destination[NUM_AXIS];
@@ -62,27 +66,29 @@ float feedrate;
 void readConfig(void){ //use as template for our config file
   ConfigFile cf("config.txt");
 
-  set.Linkage_1                     = (float)cf.Value("MACHINE", "LINK_1_LENGTH");
-  set.Linkage_2                     = (float)cf.Value("MACHINE", "LINK_2_LENGTH");
-  set.L1_2                          = set.Linkage_1 * set.Linkage_1;
-  set.L2_2                          = set.Linkage_2 * set.Linkage_2;
+  settings.Linkage_1                     = (float)cf.Value("MACHINE", "LINK_1_LENGTH");
+  settings.Linkage_2                     = (float)cf.Value("MACHINE", "LINK_2_LENGTH");
+  settings.L1_2                          = settings.Linkage_1 * settings.Linkage_1;
+  settings.L2_2                          = settings.Linkage_2 * settings.Linkage_2;
   
-  set.SCARA_offset_x                = (float)cf.Value("SETTINGS", "OFFSET_X");
-  set.SCARA_offset_y                = (float)cf.Value("SETTINGS", "OFFSET_Y");
-  set.axis_scaling[X_AXIS]          = (float)cf.Value("SETTINGS", "AXIS_SCALE_X");
-  set.axis_scaling[Y_AXIS]          = (float)cf.Value("SETTINGS", "AXIS_SCALE_Y");
+  settings.SCARA_offset_x                = (float)cf.Value("SETTINGS", "OFFSET_X");
+  settings.SCARA_offset_y                = (float)cf.Value("SETTINGS", "OFFSET_Y");
+  settings.axis_scaling[X_AXIS]          = (float)cf.Value("SETTINGS", "AXIS_SCALE_X");
+  settings.axis_scaling[Y_AXIS]          = (float)cf.Value("SETTINGS", "AXIS_SCALE_Y");
   
-  set.Sm                            = (float)cf.Value("MACHINE", "JOUNCE_MAX");
-  set.Jm                            = (float)cf.Value("MACHINE", "JERK_MAX");
-  set.Am                            = (float)cf.Value("MACHINE", "ACCELERATION_MAX");
-  set.M                             = (float)cf.Value("MACHINE", "MASS");
-  set.T                             = (float)cf.Value("MACHINE", "INTERPOLATION_PERIOD");
-  set.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
-  set.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
-  set.steps_per_mm                  = (float)cf.Value("MACHINE", "STEPS_PER_MM");
-  set.ticks_per_radian              = (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
+  settings.Sm                            = (float)cf.Value("MACHINE", "JOUNCE_MAX");
+  settings.Jm                            = (float)cf.Value("MACHINE", "JERK_MAX");
+  settings.Am                            = (float)cf.Value("MACHINE", "ACCELERATION_MAX");
+  settings.M                             = (float)cf.Value("MACHINE", "MASS");
+  settings.T                             = (float)cf.Value("MACHINE", "INTERPOLATION_PERIOD");
+  settings.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
+  settings.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
+  settings.steps_per_mm                  = (float)cf.Value("MACHINE", "STEPS_PER_MM");
+  settings.ticks_per_radian              = (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
   
-  camera_port                       = (string)cf.Value("MACHINE", "CAMERA_PORT");
+  camera	                        = (int)cf.Value("CAMERA", "CAMERA");
+  board_height						= (int)cf.Value("CAMERA", "BOARD_HEIGHT");
+  board_width						= (int)cf.Value("CAMERA", "BOARD_WIDTH");
 }
 
 int processCommand(cmd_t c){
@@ -325,6 +331,15 @@ int run(string sourceFile){
     return 0;
 }
 
+//run calibration routine
+int run_calibration(){
+	float error[2];
+	cal = new calibrate(camera, board_height, board_width);
+
+	cal->find_error(error);
+	return 0;
+}
+
 vector<string> &parse_input(const string &s, char delim, vector<string> &elems) {
     stringstream ss(s);
     string item;
@@ -341,7 +356,7 @@ vector<string> &parse_input(const string &s, char delim, vector<string> &elems) 
    readConfig(); //read config file
    
    parse = gcParser();
-   planner = new motion_planner(set);
+   planner = new motion_planner(settings);
    cmds = boost::circular_buffer<cmd_t>(10);
    conversion = 1.0; //default to mm
    scale = 1;
@@ -375,6 +390,9 @@ vector<string> &parse_input(const string &s, char delim, vector<string> &elems) 
         }
         else if (c == "run") {
             run(parts.at(1));
+        }
+        else if(c == "calibrate"){
+        	run_calibration();
         }
         else if (c == "help") {
             cout << "Circuitbot CNC program:" << endl;

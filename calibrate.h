@@ -11,12 +11,21 @@
 #ifndef CALIBRATE_H_
 #define CALIBRATE_H_
 
+#include <vector>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 class calibrate {
 public:
-    calibrate();
+    calibrate(int camera, int board_height, int board_width);
+    int find_error(float[2]);
+    bool destroy_all_windows();
     virtual ~calibrate();
 private:
+    cv::Mat img;
+    cv::VideoCapture *capture;
+    cv::Size boardSize;
+    std::vector<cv::Point2f> pointBuf;
 };
 
 #endif /* CALIBRATE_H_ */
