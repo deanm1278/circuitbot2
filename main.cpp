@@ -24,13 +24,13 @@
 #include "motion_planner.h"
 #include "calibrate.h"
 
-#define HEADLESS
+//#define HEADLESS
 
 #ifndef HEADLESS
 #include "libservodrv.h"
 #endif
 
-#define BUF_THRESH 799
+#define BUF_THRESH 300
 #define INTERP_MAX 50
 
 typedef enum {READY, G1, STOPPING, G4, M1, JOGGING} state_T;
@@ -84,7 +84,7 @@ void readConfig(void){ //use as template for our config file
   settings.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
   settings.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
   settings.steps_per_mm                  = (float)cf.Value("MACHINE", "STEPS_PER_MM");
-  settings.ticks_per_radian              = (float)cf.Value("MACHINE", "TICKS_PER_RADIAN");
+  settings.steps_per_radian              = (float)cf.Value("MACHINE", "STEPS_PER_RADIAN");
   
   camera	                        = (int)cf.Value("CAMERA", "CAMERA");
   board_height						= (int)cf.Value("CAMERA", "BOARD_HEIGHT");
@@ -365,7 +365,10 @@ vector<string> &parse_input(const string &s, char delim, vector<string> &elems) 
    //we will use the servodrv hardware api
    drv = servodrv_open();
    if(drv > -1){
+
 	   cout << "servodrv opened successfully" << endl;
+	   servodrv_begin_transmission(drv);
+	   cout << "begin transmission called" << endl;
    }
    else{
 	   cout << "failed to open servodrv!" << endl;

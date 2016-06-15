@@ -50,7 +50,7 @@ typedef struct settings_t{
      * 200 steps / 1.5875 mm per rev (lead screw) = 125.984252 steps per mm
      */
     float steps_per_mm;
-    float ticks_per_radian;
+    float steps_per_radian;
 
     float Sm;
     float Jm;
