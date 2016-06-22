@@ -142,7 +142,7 @@ private:
     float force(float a[NUM_AXIS], float b[NUM_AXIS], float c[NUM_AXIS], float V); //return the impulse of an angle (XYZ) at a speed (V)
     float _pro_vd(float vs, float dm); //return the max speed reachable with a specified starting speed (vs) and distance (dm)
     bool _pro_vv(float vs, float ve, std::vector<float> &ad); //return the A/D profile (t1, t2, t3) in vector ad
-    float _pro_ad(float vs, float ve, float dm, std::vector<float> &ad);
+    float _pro_ad(float vs, float ve, float dm, float vm, std::vector<float> &ad);
     float _v0(float t, std::vector<float> &ad);
     int calculate_delta(float cartesian[NUM_AXIS], long int delta[NUM_AXIS]);
     float _v_bar(float t, std::vector<float> &ad, float vs, float vm);

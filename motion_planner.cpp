@@ -152,7 +152,7 @@ bool motion_planner::_pro_vv(float vs, float ve, std::vector<float> &ad){
     return false;
 }
 
-float motion_planner::_pro_ad(float vs, float ve, float dm, std::vector<float> &ad){
+float motion_planner::_pro_ad(float vs, float ve, float dm, float vm, std::vector<float> &ad){
     std::vector<float> t, ti, td;
     float dmin, di, dd, t4, v0, v1, e, v2;
     
@@ -162,13 +162,13 @@ float motion_planner::_pro_ad(float vs, float ve, float dm, std::vector<float> &
     if(dmin > dm){
         return false;
     }
-    _pro_vv(vs, set.Vm, ti);
-    _pro_vv(ve, set.Vm, td);
-    di = ((vs + set.Vm)/2) * (4*ti.at(0) + 2*ti.at(1) + ti.at(2));
-    dd = ((set.Vm + ve)/2) * (4*td.at(0) + 2*td.at(1) + td.at(2));
+    _pro_vv(vs, vm, ti);
+    _pro_vv(ve, vm, td);
+    di = ((vs + vm)/2) * (4*ti.at(0) + 2*ti.at(1) + ti.at(2));
+    dd = ((vm + ve)/2) * (4*td.at(0) + 2*td.at(1) + td.at(2));
     if(di + dd <= dm){
         //Vm is reachable
-        t4 = (dm - di - dd)/set.Vm;
+        t4 = (dm - di - dd)/vm;
         ad.push_back(ti.at(0));
         ad.push_back(ti.at(1));
         ad.push_back(ti.at(2));
@@ -176,11 +176,11 @@ float motion_planner::_pro_ad(float vs, float ve, float dm, std::vector<float> &
         ad.push_back(td.at(0));
         ad.push_back(td.at(1));
         ad.push_back(ti.at(2));
-        return set.Vm;
+        return vm;
     }
     else{
         t4 = 0.0;
-        v0 = set.Vm;
+        v0 = vm;
         v1 = ve;
         e = .001;
         while(1){
@@ -287,6 +287,7 @@ float motion_planner::_v_bar(float t, std::vector<float> &ad, float vs, float vm
 
 void motion_planner::recalculate(void){
 	//recalculate the entire buffer of data
+        beginrecalc:
 	boost::circular_buffer<step_t>::iterator iter = cb.begin();
         
 	while(iter != cb.end()){
@@ -298,7 +299,7 @@ void motion_planner::recalculate(void){
 			float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
 
 			//determine end speed at this node
-			step.ve = std::min(set.Fmax/dfdv * 1000, set.Vm); //convert to mm/s
+			step.ve = std::min(set.Fmax/dfdv * 1000, step.feedrate); //convert to mm/s
 		}
 		else{
                     //the end speed at the last node will always be 0
@@ -306,6 +307,11 @@ void motion_planner::recalculate(void){
 		}
 		//check if speed is reachable given the length of the line
 		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
+                //remove any 0 length items
+                if(step.L == 0){
+                    cb.erase(iter);
+                    goto beginrecalc;
+                }
 		float max_delta = this->_pro_vd(step.vs, step.L);
                 
                 if(std::distance(iter, cb.end()) > 1){
@@ -318,7 +324,7 @@ void motion_planner::recalculate(void){
                 }
                 else{
                     //SPECIAL CASE: if this is the only item in the buffer and max speed is not reachable we need to set end speed to the max reachable speed
-                    if(step.vs + max_delta < set.Vm){
+                    if(step.vs + max_delta < step.feedrate){
                         step.ve = step.vs + max_delta;
                     }
                 }
@@ -332,13 +338,13 @@ void motion_planner::recalculate(void){
 	while(iter != cb.end()){
 		step_t step = *iter;
 
-		if(step.vs + this->_pro_vd(step.vs, step.L) < set.Vm){
+		if(step.vs + this->_pro_vd(step.vs, step.L) < step.feedrate){
 			_pro_vv(step.vs, step.ve, step.ad_profile);
 			//if(step.ad_profile.size() == 0)
 				//TODO: throw an error, this should never happen
 		}
 		else{
-			step.vm = _pro_ad(step.vs, step.ve, step.L, step.ad_profile);
+			step.vm = _pro_ad(step.vs, step.ve, step.L, step.feedrate, step.ad_profile);
 			//if(step.ad_profile.size() == 0)
 				//TODO: throw error, this should never happen
 		}
@@ -465,7 +471,12 @@ bool motion_planner::plan_buffer(std::vector<float> &buf, float feedrate){
     
     step_t step;
     std::copy(buf.begin(), buf.end(), step.point);
-    step.feedrate = feedrate;
+    if(feedrate > 0){
+        step.feedrate = std::min(feedrate, set.Vm);
+    }
+    else{
+        step.feedrate = set.Vm;
+    }
 
     //set the pointers
     if(cb.size() > 0){
@@ -505,7 +516,7 @@ bool motion_planner::full(){
 }
 
 bool motion_planner::empty(){
-    return cb.size() == 0;
+    return cb.empty();
 }
 
 int motion_planner::size(){
