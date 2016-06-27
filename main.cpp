@@ -84,11 +84,20 @@ void readConfig(void){ //use as template for our config file
   settings.Vm                            = (float)cf.Value("MACHINE", "VELOCITY_MAX");
   settings.Fmax                          = (float)cf.Value("MACHINE", "IMPULSE_MAX");
   settings.steps_per_mm                  = (float)cf.Value("MACHINE", "STEPS_PER_MM");
-  settings.steps_per_radian              = (float)cf.Value("MACHINE", "STEPS_PER_RADIAN");
+  settings.steps_per_radian_x            = (float)cf.Value("MACHINE", "STEPS_PER_RADIAN_X");
+  settings.steps_per_radian_y            = (float)cf.Value("MACHINE", "STEPS_PER_RADIAN_Y");
   
+  settings.max_plunge					 = (float)cf.Value("MACHINE", "MAX_PLUNGE_RATE");
+
   camera	                        = (int)cf.Value("CAMERA", "CAMERA");
   board_height						= (int)cf.Value("CAMERA", "BOARD_HEIGHT");
   board_width						= (int)cf.Value("CAMERA", "BOARD_WIDTH");
+}
+
+int process_arc(){
+	//TODO: break arc into line segments based on set min chord error
+	//check number of segments that will be created and do not begin until plan buffer has space for all
+	return 0;
 }
 
 int processCommand(cmd_t c){
@@ -96,6 +105,8 @@ int processCommand(cmd_t c){
 //-------------------
 // G0  -> G1
 // G1  - Coordinated Movement X Y Z E
+// G2  - clockwise arc
+// G3  - counterclockwise arc
 // G4  - Dwell S<seconds> or P<milliseconds>
 // G28 - Home all Axis
 // G90 - Use Absolute Coordinates
@@ -123,17 +134,31 @@ int processCommand(cmd_t c){
                       }
                     else{ destination[Y_AXIS] = current_position[Y_AXIS]; }
                     if ( c.params.find('Z') != c.params.end() ) {
-                        destination[Z_AXIS] = c.params['Z'] * conversion * scale;
+                        destination[Z_AXIS] = c.params['Z'] * conversion * scale * -1;
                       }
                     else{ destination[Z_AXIS] = current_position[Z_AXIS]; }
-                    if ( c.params.find('F') != c.params.end() ){ feedrate = c.params['F']; }
                     
+                    if ( c.params.find('F') != c.params.end() ) feedrate = (float)c.params['F']/60;
+
+                    if(feedrate == 0) feedrate = settings.Vm;
+
+                	if(destination[Z_AXIS] != current_position[Z_AXIS]){
+                		//confine the plunge rate
+                		feedrate = min(feedrate, settings.max_plunge / 60);
+                	}
+
                     vector<float> v(destination, destination + sizeof destination / sizeof destination[0]);
                     if( planner->plan_buffer(v, feedrate) ){
                         copy(begin(destination), end(destination), current_position);
                         break;
                     }
                     else { return 0; } //the plan buffer was full and we could not process the command
+                }
+                case 2:{			// G2 clockwise arc
+                	break;
+                }
+                case 3:{			// G3 counterclockwise arc
+                	break;
                 }
                 case 4:         // G4  - Dwell S<seconds> or P<milliseconds>
                     state = STOPPING;
@@ -249,8 +274,9 @@ int motion_loop(istream& infile){
 #ifndef HEADLESS
 				//write to the hardware
 				servodrv_write(drv, to_write, num * sizeof(uint16_t) * NUM_AXIS);
-#endif
+#else
 				cout << "wrote " << num << endl;
+#endif
 			}
 		}
 	 }
@@ -263,6 +289,7 @@ int motion_loop(istream& infile){
                                break;
                        }
                        else if( parse.parseBlock(line, cmds) > -1){
+                    	   cout << line << endl;
                                break;
                        }
                        else{
@@ -367,6 +394,7 @@ vector<string> &parse_input(const string &s, char delim, vector<string> &elems) 
    if(drv > -1){
 
 	   cout << "servodrv opened successfully" << endl;
+	   servodrv_clear_buffer(drv);
 	   servodrv_begin_transmission(drv);
 	   cout << "begin transmission called" << endl;
    }

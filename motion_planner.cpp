@@ -91,7 +91,7 @@ float motion_planner::_pro_vd(float vs, float dm){
         d0 = (4* std::pow(set.Am, 2)/set.Sm) + 4*vs*std::sqrt(set.Am/set.Sm);
         //optimization parameters
         float min = 0.0;
-        float max = 100.0;
+        float max = set.Vm;
         float guess = 0.5;
         int digits = std::numeric_limits<float>::digits;
         if(dm > d0){
@@ -257,8 +257,8 @@ int motion_planner::calculate_delta(float cartesian[NUM_AXIS], long int delta[NU
 	SCARA_theta = ( atan2(SCARA_pos[X_AXIS],SCARA_pos[Y_AXIS])-atan2(SCARA_K1, SCARA_K2) ) * -1;
 	SCARA_psi   =   atan2(SCARA_S2,SCARA_C2);
 
-	delta[X_AXIS] = SCARA_theta * set.steps_per_radian; // Theta is support arm angle (shoulder)
-	delta[Y_AXIS] = SCARA_psi * set.steps_per_radian;   // - Psi sub arm angle (elbow)
+	delta[X_AXIS] = SCARA_theta * set.steps_per_radian_x; // Theta is support arm angle (shoulder)
+	delta[Y_AXIS] = SCARA_psi * set.steps_per_radian_y;   // - Psi sub arm angle (elbow)
 	delta[Z_AXIS] = cartesian[Z_AXIS] * set.steps_per_mm; //convert to steps
 
     return 0;
@@ -293,7 +293,7 @@ void motion_planner::recalculate(void){
 	while(iter != cb.end()){
 		step_t step = *iter;
                 
-                step.vs = step.previous->ve;
+		step.vs = step.previous->ve;
                 
 		if(std::distance(iter, cb.end()) > 1){
 			float dfdv = this->force(step.previous->point, step.point, step.next->point, 1.0);
@@ -302,35 +302,55 @@ void motion_planner::recalculate(void){
 			step.ve = std::min(set.Fmax/dfdv * 1000, step.feedrate); //convert to mm/s
 		}
 		else{
-                    //the end speed at the last node will always be 0
-                    step.ve = 0.0;
+			//the end speed at the last node will always be 0
+			step.ve = 0.0;
 		}
 		//check if speed is reachable given the length of the line
 		step.L = std::sqrt(std::pow(step.point[X_AXIS] - step.previous->point[X_AXIS], 2) + std::pow(step.point[Y_AXIS] - step.previous->point[Y_AXIS], 2) + std::pow(step.point[Z_AXIS] - step.previous->point[Z_AXIS], 2));
-                //remove any 0 length items
-                if(step.L == 0){
-                    cb.erase(iter);
-                    goto beginrecalc;
-                }
-		float max_delta = this->_pro_vd(step.vs, step.L);
+		//remove any 0 length items
+		if(step.L == 0){
+			step.previous->next = (step_t *)malloc(sizeof(struct step_t));
+			cb.erase(iter);
+			goto beginrecalc;
+		}
+		step.max_delta = this->_pro_vd(step.vs, step.L);
                 
-                if(std::distance(iter, cb.end()) > 1){
-                    if(step.ve < step.vs){
-                        step.ve = std::max(step.vs - max_delta, step.ve);
-                    }
-                    else if(step.ve > step.vs){
-                        step.ve = std::min(step.vs + max_delta, step.ve);
-                    }
-                }
-                else{
-                    //SPECIAL CASE: if this is the only item in the buffer and max speed is not reachable we need to set end speed to the max reachable speed
-                    if(step.vs + max_delta < step.feedrate){
-                        step.ve = step.vs + max_delta;
-                    }
-                }
+		if(std::distance(iter, cb.end()) > 1){
+			if(step.ve < step.vs){
+				step.ve = std::max(step.vs - step.max_delta, step.ve);
+			}
+			else if(step.ve > step.vs){
+				step.ve = std::min(step.vs + step.max_delta, step.ve);
+			}
+		}
+		else{
+			//SPECIAL CASE: if this is the only item in the buffer and max speed is not reachable we need to set end speed to the max reachable speed
+			if(step.vs + step.max_delta < step.feedrate){
+				step.ve = step.vs + step.max_delta;
+			}
+		}
                 
 		*iter = step;
 		iter++;
+	}
+
+	//iterate in reverse to make sure we do not start a node faster than it's specified feedrate
+	boost::circular_buffer<step_t>::reverse_iterator riter = cb.rbegin();
+	while (riter != cb.rend()) {
+		step_t step = *riter;
+
+		step.vs = std::min(step.feedrate, step.vs);
+
+		if (std::distance(riter, cb.rend()) > 1) {
+			if (step.ve < step.vs) {
+				step.vs = std::min(step.ve + step.max_delta, step.vs);
+			} else if (step.ve > step.vs) {
+				step.vs = std::min(step.ve - step.max_delta, step.vs);
+			}
+			step.previous->ve = step.vs;
+		}
+		*riter = step;
+		riter++;
 	}
         
 	//now calculate the acc/dec profile at each node
@@ -338,7 +358,7 @@ void motion_planner::recalculate(void){
 	while(iter != cb.end()){
 		step_t step = *iter;
 
-		if(step.vs + this->_pro_vd(step.vs, step.L) < step.feedrate){
+		if(step.vs + step.max_delta < step.feedrate){
 			_pro_vv(step.vs, step.ve, step.ad_profile);
 			//if(step.ad_profile.size() == 0)
 				//TODO: throw an error, this should never happen

@@ -104,6 +104,9 @@ bool gcParser::parseBlock(std::string block, boost::circular_buffer<cmd_t> &cmds
         int i = strcspn (block.c_str(),";");                                   //remove comments
         block = block.substr(0,i);
 
+        i = strcspn (block.c_str(),"(");                                   //remove comments
+        block = block.substr(0,i);
+
         block.erase(std::remove_if(block.begin(),block.end(), ::isspace),block.end()); //remove whitespace
 
         boost::sregex_token_iterator iter(block.begin(), block.end(), re_fullCmd, 0);

@@ -18,12 +18,11 @@
 #define	MOTION_PLANNER_H
 
 #define MIN_BUF_LEN 10
-#define RAD_TO_TICK 65189.8647
-#define TO_FIXED 1000
 
 typedef struct step_t{
     float point[NUM_AXIS] = {0.0, 0.0, 0.0};	//xyz point at this node
     float feedrate = 0.0;
+    float max_delta;	//maximum speed change that can occur at the node
     float vm = 0.0;     //maximum speed at node
     float vs = 0.0;	//start speed at this node
     float ve = 0.0;	//end speed at this node
@@ -45,12 +44,14 @@ typedef struct settings_t{
     float SCARA_offset_x;
     float SCARA_offset_y;
     float axis_scaling[NUM_AXIS];
+    float max_plunge;
     /*
      * 360 degrees / 1.8 degrees per step = 200 steps per revolution
      * 200 steps / 1.5875 mm per rev (lead screw) = 125.984252 steps per mm
      */
     float steps_per_mm;
-    float steps_per_radian;
+    float steps_per_radian_x;
+    float steps_per_radian_y;
 
     float Sm;
     float Jm;
